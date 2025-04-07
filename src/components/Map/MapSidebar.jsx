@@ -410,7 +410,7 @@ const MapSidebar = ({ isLoading, nearest = [{ airports: [], seaports: [], trainp
                 <AirRoutesDisplay 
                     startAirport={customStartAirport || startAirport} 
                     endAirport={customEndAirport || endAirport} 
-                    dateRange={dateRange}
+                    flightDate={startDate} 
                 />
             )}
 

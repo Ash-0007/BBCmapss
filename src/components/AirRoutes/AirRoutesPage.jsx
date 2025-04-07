@@ -75,7 +75,7 @@ const App = ({ origin, destination, flightDate }) => {
       }
       
       setFlightData(data);
-      
+
       // After we get flight data, extract intermediate stops
       if (data?.records?.length > 0) {
         extractIntermediateStops(data.records);
@@ -194,13 +194,13 @@ const App = ({ origin, destination, flightDate }) => {
         
         try {
           // Use the arrival time as the basis for the new departure date
-          const arrivalDate = new Date(arrival.arrivalTime);
+        const arrivalDate = new Date(arrival.arrivalTime);
           const departureDate = formatDateForApi(arrivalDate);
-          
+        
           // Create a buffer (e.g., 2 hours) for the minimum connection time
-          const minDepartureTime = new Date(arrivalDate);
-          minDepartureTime.setHours(minDepartureTime.getHours() + 2);
-          
+        const minDepartureTime = new Date(arrivalDate);
+        minDepartureTime.setHours(minDepartureTime.getHours() + 2);
+        
           console.log(`Fetching routes from ${stop.airport} to ${destination} on ${departureDate}`);
           console.log(`Arrival at ${stop.airport}: ${arrival.arrivalTime}`);
           console.log(`Minimum departure time: ${minDepartureTime.toISOString()}`);
@@ -398,21 +398,21 @@ const App = ({ origin, destination, flightDate }) => {
             <div className={styles.flightSegment}>
               <div className={styles.flightHeader}>
                 <span className={styles.flightNumber}>
-                  {flight.carrierCode} {flight.flightNo}
-                </span>
+                {flight.carrierCode} {flight.flightNo}
+              </span>
                 <span className={styles.aircraftType}>
-                  {flight.aircraftType}
-                </span>
-              </div>
-              
+                {flight.aircraftType}
+              </span>
+            </div>
+            
               <div className={styles.flightRoute}>
                 <div className={styles.routePoint}>
                   <div className={styles.airportCode}>{flight.origin}</div>
                   <div className={styles.flightDateTime}>
-                    {formatDateTime(flight.deptDateTimesLocal[0])}
-                  </div>
+                  {formatDateTime(flight.deptDateTimesLocal[0])}
                 </div>
-                
+              </div>
+              
                 <div className={styles.routeDivider}>
                   <div className={styles.routeLine}></div>
                   <div className={styles.flightDuration}>
@@ -447,8 +447,8 @@ const App = ({ origin, destination, flightDate }) => {
                 {getConnectionTime(
                   flight.arrDateTimesLocal[0],
                   route[flightIndex + 1].deptDateTimesLocal[0]
-                )}
-              </div>
+              )}
+            </div>
             )}
           </React.Fragment>
         ))}
@@ -655,8 +655,8 @@ const App = ({ origin, destination, flightDate }) => {
                   </div>
                 ))}
               </div>
-            </div>
-          ))}
+          </div>
+        ))}
         </div>
       </div>
     );
@@ -697,9 +697,9 @@ const App = ({ origin, destination, flightDate }) => {
                         </span>
                         <span className={styles.connectionsDepartAfter}>
                           (Departing after {formatDateForDisplay(data.minDepartureTime)})
-                        </span>
-                      </div>
-                      
+              </span>
+            </div>
+            
                       {/* Use the same card style as the main routes */}
                       {data.routes.map((route, routeIndex) => (
                         <div key={routeIndex} className={styles.flightRoute}>
@@ -722,9 +722,9 @@ const App = ({ origin, destination, flightDate }) => {
                                   </span>
                                   <span className={styles.aircraftType}>
                                     {flight.aircraftType}
-                                  </span>
-                                </div>
-                                
+              </span>
+            </div>
+            
                                 <div className={styles.flightRoute}>
                                   <div className={styles.routePoint}>
                                     <div className={styles.airportCode}>{flight.origin}</div>
@@ -751,10 +751,10 @@ const App = ({ origin, destination, flightDate }) => {
                                 <div className={styles.flightInfo}>
                                   <span className={styles.flightSequence}>
                                     Flight {flightIndex + 1} of {route.length}
-                                  </span>
+                      </span>
                                   <span className={styles.stopInfo}>
                                     {flight.numberOfStop > 0 ? `Stops: ${flight.numberOfStop}` : 'Direct Flight'}
-                                  </span>
+                      </span>
                                   {flight.flightCancelled && (
                                     <span className={styles.flightCancelled}>CANCELLED</span>
                                   )}
@@ -781,10 +781,10 @@ const App = ({ origin, destination, flightDate }) => {
                     </div>
                   )}
                 </div>
-              </div>
+            </div>
             );
           })}
-        </div>
+          </div>
       </div>
     );
   };
@@ -867,7 +867,7 @@ const App = ({ origin, destination, flightDate }) => {
             {showEnhancedGraph && (
               <>
                 {renderEnhancedGraph()}
-                {renderIntermediateStops()}
+            {renderIntermediateStops()}
                 {renderIntermediateRoutesSection()}
               </>
             )}

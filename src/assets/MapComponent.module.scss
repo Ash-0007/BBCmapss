@@ -1,0 +1,2355 @@
+@import 'styles/variables';
+
+.mapDashboard {
+    display: grid;
+    grid-template-columns: 1fr 390px;
+    height: 100vh;
+    background: $background-dark;
+}
+
+.mapContainer {
+    height: 100%;
+    background: $background-dark;
+    z-index: 1;
+}
+
+.sidebar {
+    width: 350px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-right: 1px solid rgba(0, 0, 0, 0.1);
+    padding: 1.5rem;
+    overflow-y: auto;
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.05);
+    max-height: 100vh;
+    
+    /* Improve scrollbar styling */
+    &::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    &::-webkit-scrollbar-track {
+        background: rgba(241, 245, 249, 0.7);
+    }
+    
+    &::-webkit-scrollbar-thumb {
+        background-color: rgba(203, 213, 225, 0.8);
+        border-radius: 4px;
+    }
+
+    h3 {
+        font-size: 20px;
+        font-weight: 600;
+        color: #0f172a;
+        margin-top: 0;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    h4 {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 20px 0 12px;
+    }
+
+    h5 {
+        font-size: 14px;
+        font-weight: 600;
+        color: #334155;
+        margin: 14px 0 10px;
+    }
+}
+
+.efficiencyCard {
+    background-color: white;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+    
+    &:hover {
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+    }
+    
+    &:last-child {
+        margin-bottom: 0;
+    }
+}
+
+.cardHeader {
+    padding: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    
+    &.airport {
+        border-left: 4px solid #3b82f6;
+    }
+    
+    &.seaport {
+        border-left: 4px solid #0ea5e9;
+    }
+}
+
+.locationInfo {
+    display: flex;
+    flex-direction: column;
+}
+
+.locationName {
+    font-weight: 600;
+    font-size: 14px;
+    color: #0f172a;
+    margin-bottom: 4px;
+}
+
+.locationCode {
+    font-size: 12px;
+    color: #64748b;
+    background-color: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+    display: inline-block;
+}
+
+.efficiencyBadge {
+    background-color: #dbeafe;
+    color: #1e40af;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.cardBody {
+    padding: 12px;
+    display: flex;
+    gap: 16px;
+}
+
+.metric {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    
+    span:first-child {
+        font-size: 11px;
+        color: #64748b;
+        margin-bottom: 4px;
+    }
+    
+    span:last-child {
+        font-size: 13px;
+        font-weight: 500;
+        color: #334155;
+    }
+}
+
+.loadingOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    font-weight: 500;
+    color: #0f172a;
+    font-size: 16px;
+}
+
+.searchSection {
+    background: #f7fafc;
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid #e2e8f0;
+
+    h4 {
+        margin: 0 0 1rem;
+        color: #2d3748;
+        font-size: 1rem;
+    }
+}
+
+.searchContainer {
+    position: relative;
+    margin-bottom: 1rem;
+
+    &:last-child {
+        margin-bottom: 0;
+    }
+}
+
+.searchInput {
+    width: 90%;
+    padding: 0.75rem 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+    background: white;
+    
+    &:focus {
+        outline: none;
+        border-color: #4299e1;
+        box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
+    }
+
+    &::placeholder {
+        color: #a0aec0;
+    }
+}
+
+.suggestionsList {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    margin-top: 0.25rem;
+    padding: 0.5rem 0;
+    list-style: none;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.suggestionItem {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: #4a5568;
+    transition: all 0.2s ease;
+    
+    &:hover {
+        background-color: #f7fafc;
+        color: #2d3748;
+    }
+}
+
+.section {
+    background-color: #f8fafc;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 14px;
+    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.04);
+}
+
+.dateRangeContainer {
+    margin: 1rem 0;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+}
+
+.dateInput {
+    margin-bottom: 1rem;
+
+    label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+        color: #374151;
+    }
+
+    input[type="date"] {
+        width: 100%;
+        padding: 0.5rem;
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        
+        &:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+        }
+    }
+}
+
+.popupOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.popupContent {
+    background-color: white;
+    border-radius: 8px;
+    width: 80%;
+    max-width: 800px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.popupHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    
+    h3 {
+        margin: 0;
+        font-size: 1.25rem;
+        color: #2d3748;
+    }
+}
+
+.closeButton {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #718096;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    
+    &:hover {
+        background-color: #f7fafc;
+        color: #2d3748;
+    }
+}
+
+.popupBody {
+    padding: 1rem;
+    overflow-y: auto;
+    max-height: calc(80vh - 4rem);
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 1rem;
+        
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        th {
+            background-color: #f7fafc;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background-color: #f7fafc;
+        }
+    }
+}
+
+.loadingIndicator {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background-color: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 4px;
+    color: #0369a1;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    
+    &::before {
+        content: '';
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        margin-right: 0.5rem;
+        border: 2px solid #0369a1;
+        border-radius: 50%;
+        border-top-color: transparent;
+        animation: spin 1s linear infinite;
+    }
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.errorMessage {
+    color: #dc3545;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+    padding: 10px;
+    margin: 10px 0;
+    font-size: 14px;
+    text-align: center;
+}
+
+.vesselScheduleContainer {
+    padding: 1rem;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.vesselScheduleTitle {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.vesselTabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 0.5rem;
+}
+
+.vesselTab {
+    padding: 0.5rem 1rem;
+    background-color: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #4a5568;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    
+    &:hover {
+        background-color: #edf2f7;
+        color: #2d3748;
+    }
+    
+    &.activeTab {
+        background-color: #4299e1;
+        color: white;
+        border-color: #3182ce;
+    }
+}
+
+.vesselTableWrapper {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.vesselTableContainer {
+    min-width: 100%;
+    overflow-x: auto;
+}
+
+.vesselTable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    
+    th, td {
+        padding: 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+        white-space: nowrap;
+    }
+    
+    th {
+        background-color: #f7fafc;
+        font-weight: 600;
+        color: #4a5568;
+    }
+    
+    tr:hover {
+        background-color: #f7fafc;
+    }
+    
+    td {
+        color: #2d3748;
+    }
+}
+
+.popupControls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.viewToggleButton {
+    margin-left: auto;
+    background-color: #3182ce;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    
+    &:hover {
+        background-color: #2b6cb0;
+    }
+    
+    &:focus {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(49, 130, 206, 0.3);
+    }
+}
+
+.scheduleTable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    
+    th, td {
+        padding: 0.5rem;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    th {
+        background-color: #edf2f7;
+        font-weight: 600;
+        color: #4a5568;
+    }
+    
+    tr:last-child td {
+        border-bottom: none;
+    }
+    
+    tr:hover {
+        background-color: #f1f5f9;
+    }
+}
+
+.error-message {
+    color: #dc3545;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+    padding: 1rem;
+    margin: 1rem 0;
+    text-align: center;
+    font-size: 0.875rem;
+}
+
+.no-schedule {
+    color: #6c757d;
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    padding: 0.5rem;
+    text-align: center;
+    font-size: 0.875rem;
+    font-style: italic;
+}
+
+.noData {
+    text-align: center;
+    padding: 1.5rem;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    color: #64748b;
+    font-size: 1rem;
+    margin: 1rem 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+.routeStops {
+    margin-top: 10px;
+    font-size: 0.9rem;
+    color: #64748b;
+    padding: 8px 12px;
+    background-color: #f1f5f9;
+    border-radius: 6px;
+    line-height: 1.5;
+}
+
+.routeCarrier {
+    margin-top: 8px;
+    font-size: 0.9rem;
+    color: #334155;
+}
+
+/* Ship Routes Display - Consolidated and cleaned */
+.shipRoutesContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 80vh;
+  overflow: hidden;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 15px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.multimodalToggleButton {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 10px;
+  transition: background-color 0.2s;
+  align-self: flex-end;
+  
+  &:hover {
+    background-color: #0069d9;
+  }
+}
+
+.routeDetails {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 15px;
+  border-radius: 8px;
+  background-color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.portCard {
+  background-color: #f1f8ff;
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.portLabel {
+  font-size: 12px;
+  color: #6c757d;
+  margin-bottom: 5px;
+}
+
+.portName {
+  font-weight: 600;
+  margin-bottom: 3px;
+  text-align: center;
+}
+
+.portCode {
+  font-size: 14px;
+  color: #495057;
+  background-color: #e9ecef;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.routeArrow {
+  margin: 0 15px;
+  color: #6c757d;
+  font-size: 24px;
+}
+
+.routesList {
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 10px 5px;
+}
+
+.routeCard {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 0;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+  min-height: 100px;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  width: 100%;
+  border: 1px solid #e9ecef;
+}
+
+.routeHeader {
+  padding: 16px;
+  background-color: #edf2f7;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.routeName {
+  font-weight: 600;
+  color: #495057;
+  font-size: 15px;
+}
+
+.routeDuration {
+  color: #0056b3;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 3px 8px;
+  background-color: rgba(0,123,255,0.1);
+  border-radius: 4px;
+}
+
+.routePath {
+  padding: 16px;
+  font-size: 0.95rem;
+  color: #4a5568;
+  line-height: 1.5;
+}
+
+.modeSelector {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.modeButton {
+  padding: 12px 20px;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  color: #4a5568;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  
+  &:hover {
+    background-color: #e9ecef;
+  }
+}
+
+.activeModeButton {
+  background-color: #4a89dc;
+  border-color: #4a89dc;
+  color: white;
+}
+
+.infoMessage {
+  background-color: #e9f2fa;
+  border-left: 4px solid #4a89dc;
+  padding: 18px;
+  border-radius: 8px;
+  color: #3d8eb9;
+  margin-bottom: 20px;
+  
+  p {
+    margin: 0 0 12px 0;
+    line-height: 1.6;
+    font-size: 0.95rem;
+  }
+}
+
+.switchButton {
+  background-color: #4a89dc;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 18px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    background-color: #3d8eb9;
+    transform: translateY(-2px);
+  }
+  
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+.noRoutesMessage {
+  padding: 30px;
+  text-align: center;
+  color: #6c757d;
+  background-color: #f8f9fa;
+  border-radius: 10px;
+  border: 1px dashed #e9ecef;
+  margin: 20px 0;
+  font-size: 1rem;
+}
+
+.simpleLoadingIndicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  gap: 20px;
+  color: #3d8eb9;
+}
+
+.loadingSpinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(74, 137, 220, 0.2);
+  border-radius: 50%;
+  border-top-color: #4a89dc;
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+  .routeDetails {
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .portCard {
+    width: 100%;
+  }
+  
+  .routeArrow {
+    transform: rotate(90deg);
+    margin: 8px 0;
+  }
+  
+  .routeHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+.shipRoutesButton {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 15px;
+  background-color: #3182ce;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  
+  &:hover {
+    background-color: #2b6cb0;
+  }
+  
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.3);
+  }
+}
+
+.locationInfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.locationName {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.locationCode {
+  font-size: 0.8rem;
+  font-weight: 500;
+  opacity: 0.9;
+  background-color: rgba(255, 255, 255, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-top: 4px;
+}
+
+.portCodesContainer {
+  background-color: #f8fafc;
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 16px;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.04);
+}
+
+.portCodeInfo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+
+.portCodeLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  min-width: 120px;
+}
+
+.portCode {
+  font-weight: 600;
+  background-color: #dbeafe;
+  color: #1e40af;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  
+  &:hover {
+    background-color: #bfdbfe;
+  }
+}
+
+.portName {
+  font-size: 13px;
+  color: #334155;
+  margin-left: 6px;
+}
+
+.editCodeBtn, .saveCodeBtn {
+  background-color: #e0f2fe;
+  border: none;
+  color: #0284c7;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 8px;
+  
+  &:hover {
+    background-color: #bae6fd;
+  }
+}
+
+.editPortCode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.portCodeInput {
+  padding: 4px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  width: 60px;
+  text-transform: uppercase;
+  
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.5);
+  }
+}
+
+.shipRoutesButton, .airRoutesButton {
+  background-color: #0ea5e9;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 10px;
+  width: 100%;
+  transition: background-color 0.2s ease;
+  
+  &:hover {
+    background-color: #0284c7;
+  }
+}
+
+/* Route Graph Visualization */
+.routeGraphContainer {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.graphTitle {
+  font-size: 1.2rem;
+  margin-bottom: 10px;
+  color: #343a40;
+  font-weight: 600;
+}
+
+.graphStats {
+  display: flex;
+  gap: 15px;
+  font-size: 0.9rem;
+  color: #6c757d;
+  background-color: #e9ecef;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.canvasWrapper {
+  background-color: white;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 15px;
+}
+
+.graphCanvas {
+  display: block;
+  width: 100%;
+  height: 400px;
+  cursor: pointer;
+}
+
+.graphLoading {
+  text-align: center;
+  padding: 40px;
+  color: #6c757d;
+  font-style: italic;
+}
+
+.nodeDetail, .edgeDetail {
+  background-color: white;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 12px;
+  margin-top: 15px;
+  
+  h4 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+    color: #343a40;
+  }
+  
+  p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #6c757d;
+  }
+}
+
+.edgeData {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.edgeDataItem {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  padding: 4px 0;
+  border-bottom: 1px dashed #e9ecef;
+  
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.edgeLabel {
+  font-weight: 600;
+  color: #495057;
+}
+
+.routesHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  
+  h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #2d3748;
+  }
+}
+
+.routesActions {
+  display: flex;
+  gap: 8px;
+}
+
+.exportButton {
+  background-color: #38a169;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  
+  &:hover {
+    background-color: #2f855a;
+  }
+  
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(56, 161, 105, 0.4);
+  }
+}
+
+/* Air Routes Display */
+.airRoutesContainer {
+  margin-top: 20px;
+  padding: 20px;
+  background-color: #f8fafc;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.airRoutesTitle {
+  font-size: 1.4rem;
+  margin-bottom: 15px;
+  color: #1e293b;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 10px;
+}
+
+.mockDataLabel {
+  display: none;
+}
+
+.airRoutesList {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.airRouteItem {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background-color: white;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.05);
+  }
+}
+
+.airRouteItem h5 {
+  font-size: 1.1rem;
+  padding: 12px 15px;
+  margin: 0;
+  background-color: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  color: #334155;
+  font-weight: 600;
+}
+
+.flightSegment {
+  padding: 15px;
+  border-bottom: 1px solid #f1f5f9;
+  
+  &:last-child {
+    border-bottom: none;
+  }
+  
+  &:hover {
+    background-color: #f8fafc;
+  }
+}
+
+.flightHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+.flightNumber {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  
+  &:before {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    background-color: #3b82f6;
+    border-radius: 50%;
+  }
+}
+
+.aircraftType {
+  font-size: 0.85rem;
+  background-color: #f1f5f9;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.flightRoute {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 20px 0;
+  position: relative;
+}
+
+.routePoint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 120px;
+  text-align: center;
+}
+
+.airportCode {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 5px;
+}
+
+.flightDateTime {
+  font-size: 0.9rem;
+  color: #64748b;
+  font-weight: 500;
+  
+  .day {
+    font-weight: 700;
+    color: #334155;
+  }
+  
+  .time {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #334155;
+    margin-top: 3px;
+  }
+}
+
+.routeDivider {
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 15px;
+  position: relative;
+}
+
+.routeLine {
+  height: 2px;
+  background-color: #e2e8f0;
+  width: 100%;
+  position: relative;
+  
+  &:after {
+    content: '✈';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.2rem;
+    color: #3b82f6;
+  }
+}
+
+.flightInfo {
+  display: flex;
+  justify-content: space-between;
+  background-color: #f8fafc;
+  padding: 10px 15px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: #64748b;
+  
+  .duration {
+    font-weight: 600;
+    color: #334155;
+  }
+}
+
+.flightCancelled {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+/* Error and loading states */
+.loadingContainer, .errorContainer, .noRoutesContainer {
+  margin-top: 20px;
+  padding: 30px;
+  text-align: center;
+  background-color: #f8fafc;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.loadingContainer {
+  color: #3b82f6;
+  font-weight: 500;
+  
+  &:after {
+    content: '...';
+    animation: ellipsis 1.5s infinite;
+  }
+}
+
+.errorContainer {
+  color: #ef4444;
+}
+
+.errorTitle {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.errorMessage {
+  margin-bottom: 15px;
+  color: #b91c1c;
+}
+
+.errorHelp {
+  font-size: 0.9rem;
+  color: #64748b;
+  margin-bottom: 20px;
+  padding: 10px;
+  background-color: #f1f5f9;
+  border-radius: 6px;
+}
+
+.debugButton {
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  
+  &:hover {
+    background-color: #e2e8f0;
+  }
+}
+
+.debugInfo {
+  margin-top: 20px;
+  text-align: left;
+  padding: 15px;
+  background-color: #f1f5f9;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  
+  pre {
+    margin: 10px 0;
+    padding: 10px;
+    background-color: #0f172a;
+    color: #f8fafc;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: monospace;
+  }
+  
+  ul {
+    margin: 10px 0;
+    padding-left: 20px;
+  }
+  
+  h4 {
+    color: #334155;
+    margin-bottom: 10px;
+    font-size: 1rem;
+  }
+}
+
+.debugTip {
+  font-style: italic;
+  margin-top: 10px;
+  color: #64748b;
+}
+
+.noRoutesContainer {
+  color: #64748b;
+  font-weight: 500;
+}
+
+@keyframes ellipsis {
+  0% { content: '.'; }
+  33% { content: '..'; }
+  66% { content: '...'; }
+}
+
+/* Connection route indicator */
+.connectionIndicator {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 6px;
+  background-color: #dbeafe;
+  color: #2563eb;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Flight duration display */
+.flightDuration {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+/* Add these styles for the airport code editing UI */
+
+.editPortCode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.portCodeInput {
+  width: 60px;
+  padding: 4px 8px;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  
+  &:focus {
+    border-color: #3182ce;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.3);
+  }
+}
+
+.saveCodeBtn {
+  padding: 4px 8px;
+  background-color: #3182ce;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  
+  &:hover {
+    background-color: #2c5282;
+  }
+}
+
+.editCodeBtn {
+  padding: 2px 6px;
+  background-color: #e2e8f0;
+  color: #4a5568;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  margin-left: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  
+  &:hover {
+    background-color: #cbd5e0;
+  }
+}
+
+.portCodeInfo {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.portCode {
+  cursor: pointer;
+  font-weight: bold;
+  color: #2c5282;
+  
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.portCodeLabel {
+  min-width: 120px;
+  font-weight: 500;
+}
+
+.graphViewContainer {
+  background-color: white;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.simpleLoadingIndicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background-color: #f8fafc;
+  border-radius: 8px;
+  text-align: center;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.loadingSpinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e2e8f0;
+  border-radius: 50%;
+  border-top-color: #3b82f6;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Multimodal Graph Visualization Styles */
+.multimodalGraphContainer {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 20px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.graphHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.graphTitle {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #3d8eb9; /* dark blue */
+  margin: 0;
+}
+
+.graphStats {
+  display: flex;
+  gap: 15px;
+}
+
+.graphStat {
+  display: flex;
+  align-items: center;
+  background-color: #f8f9fa;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 3px solid #4a89dc; /* blue */
+}
+
+.statIcon {
+  margin-right: 8px;
+  font-size: 1.2rem;
+}
+
+.statValue {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #3d8eb9; /* dark blue */
+  margin: 0 5px;
+}
+
+.statLabel {
+  color: #6c757d; /* gray */
+  font-size: 0.9rem;
+}
+
+.viewControls {
+  display: flex;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.viewTab {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  color: #6c757d; /* gray */
+  position: relative;
+  transition: all 0.2s;
+}
+
+.viewTab:hover {
+  color: #4a89dc; /* blue */
+}
+
+.activeTab {
+  color: #3d8eb9; /* dark blue */
+  border-bottom: 3px solid #3d8eb9;
+}
+
+.graphContent {
+  min-height: 300px;
+}
+
+.routesList {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.routesListHeader {
+  margin-bottom: 10px;
+}
+
+.routesListHeader h3 {
+  font-size: 1.2rem;
+  color: #3d8eb9; /* dark blue */
+  margin: 0 0 5px 0;
+}
+
+.routesExplanation {
+  color: #6c757d; /* gray */
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.routeCards {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.routeCard {
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  overflow: hidden;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.routeCard:hover {
+  border-color: #4a89dc; /* blue */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.selectedRoute {
+  border-color: #4a89dc; /* blue */
+  box-shadow: 0 4px 12px rgba(74, 137, 220, 0.2);
+}
+
+.routeCardHeader {
+  padding: 15px;
+  background-color: #f8f9fa;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.routeBadge {
+  background-color: #3d8eb9; /* dark blue */
+  color: white;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.routeMetrics {
+  display: flex;
+  gap: 15px;
+}
+
+.routeMetric {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.metricIcon {
+  color: #6c757d; /* gray */
+}
+
+.metricValue {
+  font-weight: 500;
+  color: #3d8eb9; /* dark blue */
+}
+
+.routeDetails {
+  padding: 15px;
+  border-top: 1px solid #e9ecef;
+  background-color: white;
+}
+
+.routeSegments {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 5px 0;
+}
+
+.routeSegment {
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: #fafafa;
+}
+
+.segmentHeader {
+  background-color: #e9f2ff;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.segmentMode {
+  font-weight: 500;
+  color: #3d8eb9; /* dark blue */
+}
+
+.segmentDuration {
+  color: #6c757d; /* gray */
+  font-weight: 500;
+}
+
+.segmentPath {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0 10px;
+}
+
+.segmentLocation {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.locationDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #4a89dc; /* blue */
+}
+
+.locationDetails {
+  display: flex;
+  flex-direction: column;
+}
+
+.locationName {
+  font-weight: 500;
+  color: #212529;
+}
+
+.locationTime {
+  font-size: 0.9rem;
+  color: #6c757d; /* gray */
+}
+
+.pathLine {
+  width: 2px;
+  height: 30px;
+  background-color: #e9ecef;
+  margin-left: 4px;
+  position: relative;
+}
+
+.pathLineInner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background-color: #4a89dc; /* blue */
+}
+
+.segmentProvider {
+  margin-top: 10px;
+  font-size: 0.9rem;
+  color: #6c757d; /* gray */
+  font-style: italic;
+}
+
+.graphView {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+}
+
+.graphCanvas {
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  background-color: white;
+}
+
+.graphLegend {
+  display: flex;
+  gap: 15px;
+  padding: 10px;
+  background-color: white;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legendColor {
+  width: 20px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.roadColor {
+  background-color: #4a89dc; /* blue */
+}
+
+.seaColor {
+  background-color: #3d8eb9; /* dark blue */
+}
+
+.airColor {
+  background-color: #5d9cec; /* light blue */
+}
+
+.transferColor {
+  background-color: #969fa9; /* gray */
+}
+
+.legendLabel {
+  font-size: 0.9rem;
+  color: #6c757d; /* gray */
+}
+
+.mapView {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e9ecef;
+}
+
+.loadingContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  gap: 20px;
+}
+
+.loadingGlobe {
+  position: relative;
+  width: 100px;
+  height: 100px;
+}
+
+.globe {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #5d9cec, #3d8eb9);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+  animation: rotate 4s linear infinite;
+}
+
+.globeOverlay {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  opacity: 0.3;
+  background: linear-gradient(
+    to bottom right,
+    rgba(255, 255, 255, 0.8) 0%,
+    rgba(255, 255, 255, 0) 50%
+  );
+}
+
+@keyframes rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.loadingText {
+  margin-left: 10px;
+  color: #495057;
+  font-weight: 500;
+}
+
+.error {
+  color: #dc3545;
+  padding: 20px;
+  text-align: center;
+  background-color: #f8d7da;
+  border-radius: 8px;
+  border: 1px solid #f5c6cb;
+  margin: 20px 0;
+}
+
+.noDataMessage {
+  color: #6c757d; /* gray */
+  padding: 20px;
+  text-align: center;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  margin: 20px 0;
+}
+
+.routesList {
+  max-height: 500px;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+
+.routeCard {
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 15px;
+  overflow: hidden;
+}
+
+.routeHeader {
+  background-color: #f8f9fa;
+  padding: 10px 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.routeName {
+  font-weight: 600;
+  color: #495057;
+}
+
+.routeDuration {
+  color: #6c757d;
+  font-size: 0.9em;
+}
+
+.routePath {
+  padding: 10px;
+}
+
+.routeSegments {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 5px 0;
+}
+
+.routeSegment {
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: #fafafa;
+}
+
+.segmentHeader {
+  background-color: #e9f2ff;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.shipInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shipIcon {
+  font-size: 16px;
+}
+
+.shipName {
+  font-weight: 500;
+  color: #0056b3;
+  font-size: 14px;
+}
+
+.voyageInfo {
+  font-size: 13px;
+  color: #6c757d;
+  padding: 0 5px;
+  background-color: rgba(0,0,0,0.03);
+  border-radius: 4px;
+}
+
+.portConnection {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  flex-wrap: wrap;
+}
+
+.portInfo {
+  flex: 1;
+  text-align: center;
+  min-width: 120px;
+  padding: 5px;
+}
+
+.portCode {
+  font-weight: 600;
+  color: #212529;
+  font-size: 1.1em;
+}
+
+.portName {
+  color: #495057;
+  margin: 5px 0;
+  font-size: 0.9em;
+}
+
+.portTime {
+  color: #6c757d;
+  font-size: 0.85em;
+}
+
+.connectionLine {
+  padding: 0 10px;
+  color: #adb5bd;
+  font-size: 1.2em;
+  display: flex;
+  align-items: center;
+}
+
+.noData {
+  padding: 20px;
+  text-align: center;
+  color: #6c757d;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  margin: 15px 0;
+}
+
+@media (max-width: 768px) {
+  .portConnection {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .connectionLine {
+    transform: rotate(90deg);
+    padding: 10px 0;
+  }
+  
+  .portInfo {
+    width: 100%;
+  }
+}
+
+/* Intermediate Routes Styles */
+.intermediateRoutesSection {
+  margin-top: 30px;
+  padding: 20px;
+  background-color: #f0f7ff;
+  border-radius: 8px;
+  border: 1px solid #d0e1fd;
+}
+
+.intermediateRoutesInfo {
+  font-size: 0.9rem;
+  color: #5a6c7d;
+  margin-bottom: 15px;
+  font-style: italic;
+}
+
+.intermediateRouteCard {
+  margin-bottom: 20px;
+  padding: 15px;
+  background-color: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.intermediateRouteCard h4 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #2c5282;
+  font-size: 1.1rem;
+}
+
+.intermediatePointSection {
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: #f8fafc;
+  border-radius: 4px;
+}
+
+.intermediatePointSection h5 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  color: #4a5568;
+  font-size: 1rem;
+}
+
+.intermediateRoutesList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.intermediateRouteItem {
+  padding: 10px;
+  background-color: white;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.intermediateRouteHeader {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.intermediateRoutePath {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.intermediateVoyage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px;
+  background-color: #f1f5f9;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.shipName {
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.voyageInfo {
+  color: #4a5568;
+}
+
+.routeTimes {
+  color: #718096;
+  font-size: 0.85rem;
+}
+
+.noIntermediateRoutes {
+  padding: 10px;
+  background-color: #fff5f5;
+  color: #c53030;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+/* Segment Details Styles */
+.segmentDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.segmentPorts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.fromPort, .toPort {
+  font-weight: 500;
+}
+
+.portArrow {
+  color: #718096;
+}
+
+.segmentTimes {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #718096;
+}
+
+.departureTime, .arrivalTime {
+  display: inline-block;
+}
+
+.enhancedRoutesSection {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.enhancedRoutesInfo {
+  font-size: 0.9rem;
+  color: #6c757d;
+  margin-bottom: 1.5rem;
+  font-style: italic;
+}
+
+.enhancedRouteCard {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background-color: white;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.enhancedRouteCard h4 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #343a40;
+  font-size: 1.1rem;
+}
+
+.enhancedRoutesList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.enhancedRouteItem {
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border-left: 4px solid #007bff;
+}
+
+.enhancedRouteHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.enhancedRoutePath {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.shipInfo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.shipIcon {
+  font-size: 1.2rem;
+}
+
+.shipName {
+  font-weight: 600;
+  color: #495057;
+}
+
+.voyageInfo {
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+.routeTimes {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.departureTime {
+  color: #28a745;
+}
+
+.arrivalTime {
+  color: #dc3545;
+}
+
+.noEnhancedRoutes {
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  color: #6c757d;
+  font-style: italic;
+  text-align: center;
+}

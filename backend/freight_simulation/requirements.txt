@@ -1,0 +1,15 @@
+flask
+flask-cors
+networkx
+torch
+gymnasium
+numpy
+pandas
+matplotlib
+scikit-learn
+redis
+geojson
+pillow
+shapely
+folium
+gunicorn

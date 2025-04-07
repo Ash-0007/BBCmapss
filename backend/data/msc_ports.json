@@ -1,0 +1,70 @@
+{
+  "ports": [
+    {
+      "id": "322",
+      "name": "Kochi (Cochin)",
+      "country": "India",
+      "code": "INCOK"
+    },
+    {
+      "id": "62",
+      "name": "Rotterdam",
+      "country": "Netherlands",
+      "code": "NLRTM"
+    },
+    {
+      "id": "89",
+      "name": "Singapore",
+      "country": "Singapore",
+      "code": "SGSIN"
+    },
+    {
+      "id": "143",
+      "name": "Shanghai",
+      "country": "China",
+      "code": "CNSHA"
+    },
+    {
+      "id": "220",
+      "name": "Los Angeles",
+      "country": "United States",
+      "code": "USLAX"
+    },
+    {
+      "id": "190",
+      "name": "New York",
+      "country": "United States",
+      "code": "USNYC"
+    },
+    {
+      "id": "315",
+      "name": "Dubai",
+      "country": "United Arab Emirates",
+      "code": "AEDXB"
+    },
+    {
+      "id": "401",
+      "name": "Sydney",
+      "country": "Australia",
+      "code": "AUSYD"
+    },
+    {
+      "id": "128",
+      "name": "Hong Kong",
+      "country": "China",
+      "code": "HKHKG"
+    },
+    {
+      "id": "57",
+      "name": "Antwerp",
+      "country": "Belgium",
+      "code": "BEANR"
+    },
+    {
+      "id": "117",
+      "name": "Hamburg",
+      "country": "Germany",
+      "code": "DEHAM"
+    }
+  ]
+} 

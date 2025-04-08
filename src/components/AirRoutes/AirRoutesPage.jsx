@@ -716,7 +716,14 @@ const App = ({ origin, destination, flightDate }) => {
     
     const nodes = {};
     const edges = [];
+    const addedEdgeKeys = new Set(); // Keep track of unique edges added
     
+    // Helper to generate a unique key for an edge
+    const generateEdgeKey = (flight) => {
+      const departureTime = flight.deptDateTimesLocal?.[0] || flight.departure || '';
+      return `${flight.carrierCode}${flight.flightNo}_${flight.origin}_${flight.destination}_${departureTime}`;
+    };
+
     // Add nodes and edges from direct routes
     if (flightData?.records) {
       flightData.records.forEach((route, routeIndex) => {
@@ -729,20 +736,26 @@ const App = ({ origin, destination, flightDate }) => {
             nodes[flight.destination] = { id: flight.destination, name: flight.destination, type: 'airport' };
           }
           
-          // Add edge for this flight
-          edges.push({
-            id: `${flight.carrierCode}${flight.flightNo}_${routeIndex}_${flightIndex}`,
-            from: flight.origin,
-            to: flight.destination,
-            flight: `${flight.carrierCode} ${flight.flightNo}`,
-            departure: flight.deptDateTimesLocal[0],
-            arrival: flight.arrDateTimesLocal[0],
-            duration: calculateDuration(flight.deptDateTimesLocal[0], flight.arrDateTimesLocal[0]),
-            aircraft: flight.aircraftType,
-            isDirectRoute: true,
-            routeIndex,
-            flightIndex
-          });
+          // Generate unique key for this flight segment
+          const edgeKey = generateEdgeKey(flight);
+
+          // Add edge only if this key hasn't been added
+          if (!addedEdgeKeys.has(edgeKey)) {
+            edges.push({
+              id: `${flight.carrierCode}${flight.flightNo}_${routeIndex}_${flightIndex}`,
+              from: flight.origin,
+              to: flight.destination,
+              flight: `${flight.carrierCode} ${flight.flightNo}`,
+              departure: flight.deptDateTimesLocal[0],
+              arrival: flight.arrDateTimesLocal[0],
+              duration: calculateDuration(flight.deptDateTimesLocal[0], flight.arrDateTimesLocal[0]),
+              aircraft: flight.aircraftType,
+              isDirectRoute: true,
+              routeIndex,
+              flightIndex
+            });
+            addedEdgeKeys.add(edgeKey); // Mark this edge key as added
+          }
         });
       });
     }
@@ -761,25 +774,32 @@ const App = ({ origin, destination, flightDate }) => {
             nodes[flight.destination] = { id: flight.destination, name: flight.destination, type: 'airport' };
           }
           
-          // Add edge for this flight
-          edges.push({
-            id: `${flight.carrierCode}${flight.flightNo}_${key}_${routeIndex}_${flightIndex}`,
-            from: flight.origin,
-            to: flight.destination,
-            flight: `${flight.carrierCode} ${flight.flightNo}`,
-            departure: flight.deptDateTimesLocal[0],
-            arrival: flight.arrDateTimesLocal[0],
-            duration: calculateDuration(flight.deptDateTimesLocal[0], flight.arrDateTimesLocal[0]),
-            aircraft: flight.aircraftType,
-            isIntermediateRoute: true,
-            intermediateKey: key,
-            routeIndex,
-            flightIndex
-          });
+          // Generate unique key for this flight segment
+          const edgeKey = generateEdgeKey(flight);
+          
+          // Add edge only if this key hasn't been added
+          if (!addedEdgeKeys.has(edgeKey)) {
+             edges.push({
+               id: `${flight.carrierCode}${flight.flightNo}_${key}_${routeIndex}_${flightIndex}`,
+               from: flight.origin,
+               to: flight.destination,
+               flight: `${flight.carrierCode} ${flight.flightNo}`,
+               departure: flight.deptDateTimesLocal[0],
+               arrival: flight.arrDateTimesLocal[0],
+               duration: calculateDuration(flight.deptDateTimesLocal[0], flight.arrDateTimesLocal[0]),
+               aircraft: flight.aircraftType,
+               isIntermediateRoute: true,
+               intermediateKey: key,
+               routeIndex,
+               flightIndex
+             });
+             addedEdgeKeys.add(edgeKey); // Mark this edge key as added
+          }
         });
       });
     });
     
+    console.log(`buildEnhancedGraph: Added ${addedEdgeKeys.size} unique edges.`);
     return { nodes, edges };
   };
 

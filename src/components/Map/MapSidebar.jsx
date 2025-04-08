@@ -5,8 +5,6 @@ import DateRangeSelector from './DateRangeSelector';
 import ShipRoutesDisplay from './ShipRoutesDisplay';
 import AirRoutesDisplay from './AirRoutesDisplay';
 import styles from '../../assets/MapComponent.module.scss';
-import { fetchMultimodalGraph } from '../../services/api';
-import MultimodalGraphVisualization from './MultimodalGraphVisualization';
 
 const MapSidebar = ({ isLoading, nearest = [{ airports: [], seaports: [], trainports: [] }, { airports: [], seaports: [], trainports: [] }], routes = [[], []], onLocationSelect }) => {
     const [dateRange, setDateRange] = useState(null);
@@ -225,60 +223,6 @@ const MapSidebar = ({ isLoading, nearest = [{ airports: [], seaports: [], trainp
         }
     }, [startAirport, endAirport, editingStartAirport, editingEndAirport]);
 
-    // Inside the MapSidebar component, add a new state for multimodal graph data
-    const [multimodalGraph, setMultimodalGraph] = useState(null);
-    const [isLoadingMultimodal, setIsLoadingMultimodal] = useState(false);
-    const [multimodalError, setMultimodalError] = useState(null);
-    const [showMultimodal, setShowMultimodal] = useState(false);
-
-    // Add a function to fetch multimodal graph data
-    const handleFetchMultimodalGraph = useCallback(async () => {
-        if (!selectedOrigin || !selectedDestination) {
-            setMultimodalError('Please select both origin and destination points');
-            return;
-        }
-
-        setIsLoadingMultimodal(true);
-        setMultimodalError(null);
-        
-        try {
-            const result = await fetchMultimodalGraph(
-                selectedOrigin,
-                selectedDestination,
-                startDate ? new Date(startDate) : new Date(),
-                {
-                    includeRoad: true,
-                    includeSea: true, 
-                    includeAir: true,
-                    maxSeaConnections: 5,
-                    maxAirConnections: 5
-                }
-            );
-            
-            console.log('Multimodal graph data:', result);
-            setMultimodalGraph(result);
-            setShowMultimodal(true);
-        } catch (error) {
-            console.error('Error fetching multimodal graph:', error);
-            setMultimodalError(error.message || 'Failed to fetch multimodal transport graph');
-        } finally {
-            setIsLoadingMultimodal(false);
-        }
-    }, [selectedOrigin, selectedDestination, startDate]);
-
-    // Add a useEffect to initialize selectedOrigin and selectedDestination
-    useEffect(() => {
-        // Check if we have any initial locations in the nearest array
-        if (nearest && nearest.length >= 2) {
-            if (nearest[0] && nearest[0].location && !selectedOrigin) {
-                setSelectedOrigin(nearest[0].location);
-            }
-            if (nearest[1] && nearest[1].location && !selectedDestination) {
-                setSelectedDestination(nearest[1].location);
-            }
-        }
-    }, [nearest, selectedOrigin, selectedDestination]);
-
     return (
         <aside className={styles.sidebar}>
             {isLoading && <div className={styles.loadingOverlay}>Loading...</div>}
@@ -495,118 +439,6 @@ const MapSidebar = ({ isLoading, nearest = [{ airports: [], seaports: [], trainp
                     </div>
                 </div>
             )}
-
-            {/* Multimodal Transport Section */}
-            <div className={styles.transportEfficiencyPanel}>
-                <h3 className={styles.sectionTitle}>Multimodal Transport</h3>
-                <p className={styles.sectionDescription}>
-                    Analyze and visualize all possible transport connections between origin and destination
-                </p>
-                
-                <div className={styles.controls}>
-                    {(!selectedOrigin || !selectedDestination) ? (
-                        <div className={styles.infoMessage}>
-                            Please select both origin and destination locations to generate a multimodal transport graph.
-                        </div>
-                    ) : (
-                        <button
-                            className={styles.actionButton}
-                            onClick={handleFetchMultimodalGraph}
-                            disabled={isLoadingMultimodal}
-                        >
-                            {isLoadingMultimodal ? 'Loading...' : 'Generate Multimodal Graph'}
-                        </button>
-                    )}
-                    
-                    {showMultimodal && multimodalGraph && (
-                        <button
-                            className={`${styles.actionButton} ${styles.secondaryButton}`}
-                            onClick={() => setShowMultimodal(false)}
-                        >
-                            Hide Graph
-                        </button>
-                    )}
-                </div>
-                
-                {multimodalError && (
-                    <div className={styles.errorMessage}>
-                        {multimodalError}
-                    </div>
-                )}
-                
-                {isLoadingMultimodal && (
-                    <div className={styles.loadingContainer}>
-                        <div className={styles.spinner}></div>
-                        <p>Building multimodal transport graph...</p>
-                    </div>
-                )}
-                
-                {showMultimodal && multimodalGraph && (
-                    <div className={styles.multimodalContent}>
-                        <MultimodalGraphVisualization graphData={multimodalGraph} />
-                        
-                        {multimodalGraph.pathOptions && multimodalGraph.pathOptions.length > 0 && (
-                            <div className={styles.multimodalOptionsList}>
-                                <h4>Available Route Options</h4>
-                                
-                                {multimodalGraph.pathOptions.map((option, index) => (
-                                    <div key={index} className={styles.multimodalOption}>
-                                        <div className={styles.multimodalOptionHeader}>
-                                            <span className={styles.optionTitle}>
-                                                Option {index + 1}
-                                            </span>
-                                            <div>
-                                                {option.score && (
-                                                    <span className={styles.optionScore}>
-                                                        Score: {option.score.toFixed(2)}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        
-                                        <div className={styles.transportModes}>
-                                            {option.modes.includes('road') && (
-                                                <span className={`${styles.transportMode} ${styles.roadMode}`}>
-                                                    🚚 Road
-                                                </span>
-                                            )}
-                                            {option.modes.includes('sea') && (
-                                                <span className={`${styles.transportMode} ${styles.seaMode}`}>
-                                                    🚢 Sea
-                                                </span>
-                                            )}
-                                            {option.modes.includes('air') && (
-                                                <span className={`${styles.transportMode} ${styles.airMode}`}>
-                                                    ✈️ Air
-                                                </span>
-                                            )}
-                                        </div>
-                                        
-                                        <div className={styles.routeStats}>
-                                            <div className={styles.routeStat}>
-                                                <span className={styles.value}>{option.totalDistance?.toFixed(0)} km</span>
-                                                <span className={styles.label}>Distance</span>
-                                            </div>
-                                            <div className={styles.routeStat}>
-                                                <span className={styles.value}>{option.totalDuration?.toFixed(1)} hrs</span>
-                                                <span className={styles.label}>Duration</span>
-                                            </div>
-                                            <div className={styles.routeStat}>
-                                                <span className={styles.value}>${option.totalCost?.toFixed(0)}</span>
-                                                <span className={styles.label}>Est. Cost</span>
-                                            </div>
-                                            <div className={styles.routeStat}>
-                                                <span className={styles.value}>{option.totalEmission?.toFixed(0)} kg</span>
-                                                <span className={styles.label}>CO₂</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
         </aside>
     );
 };

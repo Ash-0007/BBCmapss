@@ -15,70 +15,76 @@ let fetchMultimodalGraphPromise = null;
  * Get nearest locations to lat/lng coordinates
  */
 const getNearestLocations = async (req, res) => {
-    const { lat, lng } = req.query;
+    const { lat, lng, type, limit = 3 } = req.query;
+    let client;
 
     if (!lat || !lng) {
-        logger.error('NearestAPI', 'Missing required parameters: ' + JSON.stringify({ lat, lng }));
-        return res.status(400).json({ error: 'Latitude and longitude are required.' });
+        return res.status(400).json({ error: 'Latitude and longitude are required' });
     }
-
-    logger.info('NearestAPI', 'Processing nearest request for coordinates: ' + JSON.stringify({ lat, lng }));
-    let client = null;
 
     try {
         logger.info('NearestAPI', 'Connecting to database for nearest locations...');
         client = await getDbClient();
         logger.info('NearestAPI', 'Connected to database successfully');
 
-        const airportQuery = `
-            SELECT 
-                iata_code,
-                airport_name,
-                latitude_dd,
-                longitude_dd,
-                ST_Distance(location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000 AS distance
-            FROM airports
-            WHERE location IS NOT NULL
-            ORDER BY distance ASC
-            LIMIT 3
-        `;
-
-        const seaportQuery = `
-            SELECT 
-                world_port_index,
-                main_port_name,
-                latitude_dd,
-                longitude_dd,
-                ST_Distance(location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000 AS distance
-            FROM seaports
-            WHERE location IS NOT NULL
-            ORDER BY distance ASC
-            LIMIT 3
-        `;
-
-        const [airportsResult, seaportsResult] = await Promise.all([
-            client.query(airportQuery, [lng, lat]),
-            client.query(seaportQuery, [lng, lat])
-        ]);
-
         const response = {
-            airports: airportsResult.rows.map(airport => ({
+            airports: [],
+            seaports: []
+        };
+
+        // Only query airports if type is not specified or is 'airport'
+        if (!type || type === 'airport') {
+            const airportQuery = `
+                SELECT 
+                    iata_code,
+                    airport_name,
+                    latitude_dd,
+                    longitude_dd,
+                    ST_Distance(location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000 AS distance
+                FROM airports
+                WHERE location IS NOT NULL
+                ORDER BY distance ASC
+                LIMIT $3
+            `;
+
+            const airportsResult = await client.query(airportQuery, [lng, lat, limit]);
+            response.airports = airportsResult.rows.map((airport, index) => ({
                 code: airport.iata_code,
                 name: airport.airport_name || airport.iata_code,
                 latitude_dd: parseFloat(airport.latitude_dd),
                 longitude_dd: parseFloat(airport.longitude_dd),
                 distance: parseFloat(airport.distance),
-                type: 'airport'
-            })),
-            seaports: seaportsResult.rows.map(port => ({
+                type: 'airport',
+                isPrimary: index === 0 // Mark the first (closest) airport as primary
+            }));
+        }
+
+        // Only query seaports if type is not specified or is 'seaport'
+        if (!type || type === 'seaport') {
+            const seaportQuery = `
+                SELECT 
+                    world_port_index,
+                    main_port_name,
+                    latitude_dd,
+                    longitude_dd,
+                    ST_Distance(location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000 AS distance
+                FROM seaports
+                WHERE location IS NOT NULL
+                ORDER BY distance ASC
+                LIMIT $3
+            `;
+
+            const seaportsResult = await client.query(seaportQuery, [lng, lat, limit]);
+            response.seaports = seaportsResult.rows.map((port, index) => ({
                 code: port.world_port_index,
                 name: port.main_port_name || port.world_port_index,
                 latitude_dd: parseFloat(port.latitude_dd),
                 longitude_dd: parseFloat(port.longitude_dd),
                 distance: parseFloat(port.distance),
-                type: 'seaport'
-            }))
-        };
+                type: 'seaport',
+                isPrimary: index === 0 // Mark the first (closest) port as primary
+            }));
+        }
 
         logger.info('NearestAPI', `Found ${response.airports.length} airports and ${response.seaports.length} seaports near location`);
         res.json(response);

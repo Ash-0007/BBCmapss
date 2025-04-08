@@ -1,6 +1,10 @@
-import React, { useState, useEffect } from "react";
-import styles from '../../assets/MapComponent.module.scss';
-import { fetchHapagShipRoutesGraph } from '../../services/api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { 
+  fetchAirRoutes, 
+  fetchHapagShipRoutesGraph,
+  dataStore 
+} from '../../services/api';
+import styles from './AirRoutesPage.module.scss';
 
 const App = ({ origin, destination, flightDate }) => {
   const [flightData, setFlightData] = useState(null);
@@ -21,6 +25,9 @@ const App = ({ origin, destination, flightDate }) => {
   const [seaRoutesData, setSeaRoutesData] = useState({});
   const [loadingSeaRoutes, setLoadingSeaRoutes] = useState(false);
   const [multimodalGraph, setMultimodalGraph] = useState(null);
+
+  // Add a state variable for tracking graph storage status
+  const [graphStorageStatus, setGraphStorageStatus] = useState('pending');
 
   const fetchFlightData = async () => {
     if (!flightDate) {
@@ -194,15 +201,18 @@ const App = ({ origin, destination, flightDate }) => {
     
     const intermediateRoutesData = {};
     
+    // Track processed queries to avoid duplicates
+    const processedQueries = new Set();
+    
+    // Prepare all requests to be run in parallel
+    const fetchPromises = [];
+    
     // For each intermediate stop
-    for (const stop of stops) {
+    stops.forEach(stop => {
       console.log(`Processing intermediate stop: ${stop.airport}`);
       
       // For each arrival at this stop
-      for (let i = 0; i < stop.arrivals.length; i++) {
-        const arrival = stop.arrivals[i];
-        
-        try {
+      stop.arrivals.forEach(arrival => {
           // Use the arrival time as the basis for the new departure date
         const arrivalDate = new Date(arrival.arrivalTime);
           const departureDate = formatDateForApi(arrivalDate);
@@ -211,11 +221,24 @@ const App = ({ origin, destination, flightDate }) => {
         const minDepartureTime = new Date(arrivalDate);
         minDepartureTime.setHours(minDepartureTime.getHours() + 2);
         
-          console.log(`Fetching routes from ${stop.airport} to ${destination} on ${departureDate}`);
+        // Create a unique query ID to avoid duplicates
+        const queryId = `${stop.airport}-${destination}-${departureDate}`;
+        
+        // Skip if we've already processed this exact query
+        if (processedQueries.has(queryId)) {
+          console.log(`Skipping duplicate query: ${queryId}`);
+          return;
+        }
+        
+        // Mark this query as processed
+        processedQueries.add(queryId);
+        
+        console.log(`Preparing request for routes from ${stop.airport} to ${destination} on ${departureDate}`);
           console.log(`Arrival at ${stop.airport}: ${arrival.arrivalTime}`);
           console.log(`Minimum departure time: ${minDepartureTime.toISOString()}`);
           
-          const res = await fetch("http://localhost:3000/api/air-cargo", {
+        // Create a promise for this fetch operation
+        const fetchPromise = fetch("http://localhost:3000/api/air-cargo", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -225,11 +248,10 @@ const App = ({ origin, destination, flightDate }) => {
               destination,
               flightDate: departureDate,
             }),
-          });
-          
+        }).then(async res => {
           if (!res.ok) {
             console.error(`Error fetching routes: ${res.status}`);
-            continue;
+            return { error: true, status: res.status, stop, arrival };
           }
           
           const data = await res.json();
@@ -244,6 +266,36 @@ const App = ({ origin, destination, flightDate }) => {
           
           console.log(`After filtering: ${validRoutes.length} valid routes`);
           
+          return {
+            error: false,
+            stop,
+            arrival,
+            validRoutes,
+            minDepartureTime
+          };
+        }).catch(error => {
+          console.error(`Error fetching routes from ${stop.airport}:`, error);
+          return { error: true, message: error.message, stop, arrival };
+        });
+        
+        fetchPromises.push(fetchPromise);
+      });
+    });
+    
+    try {
+      // Run all fetch operations in parallel
+      console.log(`Executing ${fetchPromises.length} parallel requests...`);
+      const results = await Promise.all(fetchPromises);
+      
+      // Process the results
+      results.forEach(result => {
+        if (result.error) {
+          console.log(`Skipping result due to error: ${result.message || result.status}`);
+          return;
+        }
+        
+        const { stop, arrival, validRoutes, minDepartureTime } = result;
+          
           // Store these valid routes
           if (validRoutes.length > 0) {
             const key = `${stop.airport}-${formatDateForDisplay(arrival.arrivalTime)}`;
@@ -256,15 +308,95 @@ const App = ({ origin, destination, flightDate }) => {
               routes: validRoutes
             };
           }
+      });
+      
+      console.log("Intermediate routes data:", intermediateRoutesData);
+      setIntermediateRoutes(intermediateRoutesData);
+      
+      // Automatically build and store the enhanced air graph without requiring user interaction
+      if (Object.keys(intermediateRoutesData).length > 0) {
+        console.log("Automatically building and storing enhanced air graph...");
+        
+        try {
+          // Set storage status to indicate we're processing
+          setGraphStorageStatus('storing');
+          
+          // Build the enhanced graph
+          const enhancedGraph = buildEnhancedGraph(intermediateRoutesData);
+          
+          // Store it in the dataStore
+          if (typeof dataStore !== 'undefined') {
+            dataStore.enhancedAirGraph = enhancedGraph;
+            console.log("Enhanced air graph automatically stored in dataStore.enhancedAirGraph");
+          }
+          
+          // Also make it available in the window object
+          window.enhancedAirGraph = enhancedGraph;
+          console.log("Enhanced air graph available at window.enhancedAirGraph");
+          
+          // If we also have an airRoutesGraph, update it to include this data
+          if (typeof dataStore !== 'undefined' && dataStore.airRoutesGraph) {
+            // Merge the new graph data into the existing airRoutesGraph
+            const mergedGraph = { ...dataStore.airRoutesGraph };
+            
+            // Add nodes and connections from the enhanced graph
+            Object.keys(enhancedGraph.nodes || {}).forEach(nodeKey => {
+              if (!mergedGraph[nodeKey]) {
+                mergedGraph[nodeKey] = [];
+              }
+              
+              // Add any new connections (edges)
+              (enhancedGraph.edges || []).forEach(edge => {
+                if (edge.from === nodeKey) {
+                  // Format the edge into the expected format for the air routes graph
+                  const edgeInfo = {
+                    shipId: edge.id || `flight_${edge.flight}`,
+                    shipName: edge.flight,
+                    voyage: edge.flight.split(' ')[1], // Assumes format "XX 1234"
+                    fromPort: edge.from,
+                    fromPortName: edge.from,
+                    toPort: edge.to,
+                    toPortName: edge.to,
+                    departureTime: edge.departure,
+                    arrivalTime: edge.arrival,
+                    type: 'air',
+                    aircraft: edge.aircraft || 'Unknown',
+                    carrier: edge.flight.split(' ')[0]
+                  };
+                  
+                  // Check if this edge already exists to avoid duplicates
+                  const edgeExists = mergedGraph[nodeKey].some(
+                    existing => existing.shipId === edgeInfo.shipId
+                  );
+                  
+                  if (!edgeExists) {
+                    mergedGraph[nodeKey].push(edgeInfo);
+                  }
+                }
+              });
+            });
+            
+            // Update the dataStore with the merged graph
+            dataStore.airRoutesGraph = mergedGraph;
+            console.log("Merged enhanced graph data into dataStore.airRoutesGraph");
+            
+            // Also update the window object
+            window.airRoutesGraph = mergedGraph;
+          }
+          
+          // Update the storage status to success
+          setGraphStorageStatus('stored');
+          console.log("Enhanced graph storing complete");
         } catch (error) {
-          console.error(`Error fetching routes from ${stop.airport}:`, error);
+          console.error("Error automatically storing enhanced graph:", error);
+          setGraphStorageStatus('error');
         }
       }
-    }
-    
-    console.log("Intermediate routes data:", intermediateRoutesData);
-    setIntermediateRoutes(intermediateRoutesData);
+    } catch (error) {
+      console.error("Error in fetchIntermediateRoutes:", error);
+    } finally {
     setLoadingIntermediates(false);
+    }
   };
   
   // Format date for API (YYYY-MM-DD)
@@ -494,9 +626,164 @@ const App = ({ origin, destination, flightDate }) => {
   };
   
   const toggleEnhancedGraph = () => {
+    // Toggle the display state
     setShowEnhancedGraph(!showEnhancedGraph);
+    
+    // If we're turning on the enhanced graph, make sure it's stored properly
+    if (!showEnhancedGraph) { // This means we're about to show it
+      try {
+        setGraphStorageStatus('storing');
+        console.log("Preparing enhanced air routes graph for display and storage...");
+        
+        // Build the enhanced graph
+        const enhancedGraph = buildEnhancedGraph();
+        
+        // Store it in the dataStore
+        if (typeof dataStore !== 'undefined') {
+          dataStore.enhancedAirGraph = enhancedGraph;
+          console.log("Enhanced air graph stored in dataStore.enhancedAirGraph");
+        }
+        
+        // Also make it available in the window object
+        window.enhancedAirGraph = enhancedGraph;
+        console.log("Enhanced air graph available at window.enhancedAirGraph");
+        
+        // If we also have an airRoutesGraph, update it to include this data
+        if (typeof dataStore !== 'undefined' && dataStore.airRoutesGraph) {
+          // Merge the new graph data into the existing airRoutesGraph
+          const mergedGraph = { ...dataStore.airRoutesGraph };
+          
+          // Add nodes and connections from the enhanced graph
+          Object.keys(enhancedGraph.nodes || {}).forEach(nodeKey => {
+            if (!mergedGraph[nodeKey]) {
+              mergedGraph[nodeKey] = [];
+            }
+            
+            // Add any new connections (edges)
+            (enhancedGraph.edges || []).forEach(edge => {
+              if (edge.from === nodeKey) {
+                // Format the edge into the expected format for the air routes graph
+                const edgeInfo = {
+                  shipId: edge.id || `flight_${edge.flight}`,
+                  shipName: edge.flight,
+                  voyage: edge.flight.split(' ')[1], // Assumes format "XX 1234"
+                  fromPort: edge.from,
+                  fromPortName: edge.from,
+                  toPort: edge.to,
+                  toPortName: edge.to,
+                  departureTime: edge.departure,
+                  arrivalTime: edge.arrival,
+                  type: 'air',
+                  aircraft: edge.aircraft || 'Unknown',
+                  carrier: edge.flight.split(' ')[0]
+                };
+                
+                // Check if this edge already exists to avoid duplicates
+                const edgeExists = mergedGraph[nodeKey].some(
+                  existing => existing.shipId === edgeInfo.shipId
+                );
+                
+                if (!edgeExists) {
+                  mergedGraph[nodeKey].push(edgeInfo);
+                }
+              }
+            });
+          });
+          
+          // Update the dataStore with the merged graph
+          dataStore.airRoutesGraph = mergedGraph;
+          console.log("Merged enhanced graph data into dataStore.airRoutesGraph");
+          
+          // Also update the window object
+          window.airRoutesGraph = mergedGraph;
+        }
+        
+        // Update the storage status to success
+        setGraphStorageStatus('stored');
+        
+        // Remove the alert notification - no need to interrupt user experience
+      } catch (error) {
+        console.error("Error storing enhanced graph:", error);
+        setGraphStorageStatus('error');
+      }
+    }
   };
   
+  // Helper function to build the enhanced graph structure
+  const buildEnhancedGraph = (routesData = null) => {
+    // Use provided routes data or fall back to the state
+    const intermediateRoutesData = routesData || intermediateRoutes;
+    
+    const nodes = {};
+    const edges = [];
+    
+    // Add nodes and edges from direct routes
+    if (flightData?.records) {
+      flightData.records.forEach((route, routeIndex) => {
+        route.forEach((flight, flightIndex) => {
+          // Add nodes for each airport
+          if (!nodes[flight.origin]) {
+            nodes[flight.origin] = { id: flight.origin, name: flight.origin, type: 'airport' };
+          }
+          if (!nodes[flight.destination]) {
+            nodes[flight.destination] = { id: flight.destination, name: flight.destination, type: 'airport' };
+          }
+          
+          // Add edge for this flight
+          edges.push({
+            id: `${flight.carrierCode}${flight.flightNo}_${routeIndex}_${flightIndex}`,
+            from: flight.origin,
+            to: flight.destination,
+            flight: `${flight.carrierCode} ${flight.flightNo}`,
+            departure: flight.deptDateTimesLocal[0],
+            arrival: flight.arrDateTimesLocal[0],
+            duration: calculateDuration(flight.deptDateTimesLocal[0], flight.arrDateTimesLocal[0]),
+            aircraft: flight.aircraftType,
+            isDirectRoute: true,
+            routeIndex,
+            flightIndex
+          });
+        });
+      });
+    }
+    
+    // Add edges from intermediate routes
+    Object.entries(intermediateRoutesData).forEach(([key, data]) => {
+      if (!data.routes) return;
+      
+      data.routes.forEach((route, routeIndex) => {
+        route.forEach((flight, flightIndex) => {
+          // Add nodes for each airport
+          if (!nodes[flight.origin]) {
+            nodes[flight.origin] = { id: flight.origin, name: flight.origin, type: 'airport' };
+          }
+          if (!nodes[flight.destination]) {
+            nodes[flight.destination] = { id: flight.destination, name: flight.destination, type: 'airport' };
+          }
+          
+          // Add edge for this flight
+          edges.push({
+            id: `${flight.carrierCode}${flight.flightNo}_${key}_${routeIndex}_${flightIndex}`,
+            from: flight.origin,
+            to: flight.destination,
+            flight: `${flight.carrierCode} ${flight.flightNo}`,
+            departure: flight.deptDateTimesLocal[0],
+            arrival: flight.arrDateTimesLocal[0],
+            duration: calculateDuration(flight.deptDateTimesLocal[0], flight.arrDateTimesLocal[0]),
+            aircraft: flight.aircraftType,
+            isIntermediateRoute: true,
+            intermediateKey: key,
+            routeIndex,
+            flightIndex
+          });
+        });
+      });
+    });
+    
+    return { nodes, edges };
+  };
+
+  // Add back the connection hours handler
   const handleConnectionHoursChange = (e) => {
     const value = parseInt(e.target.value, 10);
     if (!isNaN(value) && value > 0) {
@@ -506,7 +793,7 @@ const App = ({ origin, destination, flightDate }) => {
   
   // Render the air routes graph visualization
   const renderEnhancedGraph = () => {
-    // Build a graph data structure from the routes
+    // Build the graph just for visualization
     const nodes = new Set();
     const edges = [];
     
@@ -860,6 +1147,36 @@ const App = ({ origin, destination, flightDate }) => {
                   onClick={toggleEnhancedGraph}
                 >
                   {showEnhancedGraph ? 'Hide Enhanced Graph' : 'Show Enhanced Graph'}
+                  {graphStorageStatus === 'stored' && (
+                    <span style={{ 
+                      display: 'inline-block', 
+                      width: '10px', 
+                      height: '10px', 
+                      borderRadius: '50%', 
+                      background: '#4caf50',
+                      marginLeft: '5px' 
+                    }} title="Graph stored in dataStore and window"></span>
+                  )}
+                  {graphStorageStatus === 'storing' && (
+                    <span style={{ 
+                      display: 'inline-block', 
+                      width: '10px', 
+                      height: '10px', 
+                      borderRadius: '50%', 
+                      background: '#ff9800',
+                      marginLeft: '5px' 
+                    }} title="Storing graph..."></span>
+                  )}
+                  {graphStorageStatus === 'error' && (
+                    <span style={{ 
+                      display: 'inline-block', 
+                      width: '10px', 
+                      height: '10px', 
+                      borderRadius: '50%', 
+                      background: '#f44336',
+                      marginLeft: '5px' 
+                    }} title="Error storing graph"></span>
+                  )}
                 </button>
               </div>
             </div>

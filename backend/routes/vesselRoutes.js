@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const vesselController = require('../controller/vesselController');
 
-// Get nearest locations to coordinates
+// Get nearest airports and seaports to a location
 router.get('/nearest', vesselController.getNearestLocations);
 
 // Get vessel arrival info

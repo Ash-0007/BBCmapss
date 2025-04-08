@@ -1764,21 +1764,33 @@ function generatePaths(graph, sourceId, targetId, maxTransfers) {
     return paths;
 }
 
-// Utility function to calculate distance between two points using Haversine formula
-function calculateDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371; // Radius of the Earth in km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  
+/**
+ * Calculate the distance between two points using the Haversine formula
+ * @param {number} lat1 - Latitude of first point
+ * @param {number} lon1 - Longitude of first point
+ * @param {number} lat2 - Latitude of second point
+ * @param {number} lon2 - Longitude of second point
+ * @returns {number} Distance in kilometers
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
   const a = 
     Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLng/2) * Math.sin(dLng/2);
-  
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  const distance = R * c; // Distance in km
-  
-  return distance;
+  return R * c;
+}
+
+/**
+ * Convert degrees to radians
+ * @param {number} degrees - Angle in degrees
+ * @returns {number} Angle in radians
+ */
+function toRad(degrees) {
+  return degrees * (Math.PI/180);
 }
 
 // Add mock data functions to support testing if real APIs are not available
@@ -1985,72 +1997,118 @@ export const fetchComprehensiveMultimodalGraph = async (origin, destination, sta
  * @returns {Promise<Object>} Intermediate ship routes data
  */
 export const fetchIntermediateShipRoutes = async (path, startDate, completeGraph = null) => {
-    try {
-        console.log('===== FETCHING INTERMEDIATE SHIP ROUTES =====');
-        console.log('Request parameters:', { path, startDate, hasCompleteGraph: !!completeGraph });
-        
-        // Format the date properly based on input type
-        let formattedDate = null;
-        if (startDate) {
-            if (startDate instanceof Date) {
-                // Handle Date object
-                const year = startDate.getFullYear();
-                const month = String(startDate.getMonth() + 1).padStart(2, '0');
-                const day = String(startDate.getDate()).padStart(2, '0');
-                formattedDate = `${year}-${month}-${day}`;
-            } else if (typeof startDate === 'string') {
-                // Handle string in YYYYMMDD format
-                if (startDate.length === 8 && !startDate.includes('-')) {
-                    const year = startDate.substring(0, 4);
-                    const month = startDate.substring(4, 6);
-                    const day = startDate.substring(6, 8);
+    let retryCount = 0;
+    const maxRetries = 3;
+    const retryDelay = 1000; // 1 second delay between retries
+    
+    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+    
+    while (retryCount <= maxRetries) {
+        try {
+            console.log(`===== FETCHING INTERMEDIATE SHIP ROUTES (Attempt ${retryCount + 1}/${maxRetries + 1}) =====`);
+            console.log('Request parameters:', { path, startDate, hasCompleteGraph: !!completeGraph });
+            
+            // Format the date properly based on input type
+            let formattedDate = null;
+            if (startDate) {
+                if (startDate instanceof Date) {
+                    // Handle Date object
+                    const year = startDate.getFullYear();
+                    const month = String(startDate.getMonth() + 1).padStart(2, '0');
+                    const day = String(startDate.getDate()).padStart(2, '0');
                     formattedDate = `${year}-${month}-${day}`;
-                } else {
-                    // Already in YYYY-MM-DD format or other format
-                    formattedDate = startDate;
+                } else if (typeof startDate === 'string') {
+                    // Handle string in YYYYMMDD format
+                    if (startDate.length === 8 && !startDate.includes('-')) {
+                        const year = startDate.substring(0, 4);
+                        const month = startDate.substring(4, 6);
+                        const day = startDate.substring(6, 8);
+                        formattedDate = `${year}-${month}-${day}`;
+                    } else {
+                        // Already in YYYY-MM-DD format or other format
+                        formattedDate = startDate;
+                    }
                 }
+                console.log('Formatted date:', formattedDate);
             }
-            console.log('Formatted date:', formattedDate);
-        }
-        
-        const requestBody = {
-            path: path,
-            startDate: formattedDate,
-            completeGraph: completeGraph
-        };
-        
-        console.log('API request URL:', `${API_BASE_URL}/api/intermediate-ship-routes`);
-        console.log('API request body:', JSON.stringify(requestBody, null, 2));
-        
-        // Use POST request to the proper endpoint
-        const response = await fetch(`${API_BASE_URL}/api/intermediate-ship-routes`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
-        
-        console.log('API response status:', response.status, response.statusText);
-        
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => null);
-            console.error('API response not OK:', {
-                status: response.status,
-                statusText: response.statusText,
-                error: errorData
+            
+            const requestBody = {
+                path: path,
+                startDate: formattedDate,
+                completeGraph: completeGraph
+            };
+            
+            console.log('API request URL:', `${API_BASE_URL}/api/intermediate-ship-routes`);
+            console.log('API request body:', JSON.stringify(requestBody, null, 2));
+            
+            // Use POST request to the proper endpoint
+            const response = await fetch(`${API_BASE_URL}/api/intermediate-ship-routes`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
             });
-            throw new Error(`HTTP error: ${response.status}`);
+            
+            console.log('API response status:', response.status, response.statusText);
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                console.error('API response not OK:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    error: errorData
+                });
+                
+                // For 500 errors, we'll retry after a delay
+                if (response.status === 500 && retryCount < maxRetries) {
+                    retryCount++;
+                    console.log(`Retrying in ${retryDelay}ms... (Attempt ${retryCount + 1}/${maxRetries + 1})`);
+                    await delay(retryDelay * retryCount); // Exponential backoff
+                    continue; // Retry the request
+                }
+                
+                // If we've reached max retries or it's not a 500 error, throw a more informative error
+                throw new Error(`HTTP error: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log('Received intermediate ship routes data:', data);
+            
+            return data;
+        } catch (error) {
+            console.error(`Fetch intermediate ship routes error (Attempt ${retryCount + 1}/${maxRetries + 1}):`, error);
+            
+            // If we haven't hit max retries yet, try again
+            if (retryCount < maxRetries) {
+                retryCount++;
+                console.log(`Retrying in ${retryDelay}ms... (Attempt ${retryCount + 1}/${maxRetries + 1})`);
+                await delay(retryDelay * retryCount); // Exponential backoff
+            } else {
+                // If we've reached max retries, use a fallback mechanism
+                console.log("Max retries reached, returning fallback data");
+                
+                // Generate fallback data based on the path
+                const fallbackData = {
+                    path: path,
+                    startDate: startDate,
+                    intermediateRoutes: {},
+                    isGeneratedFallback: true, // Flag to indicate this is fallback data
+                    completeGraph: completeGraph // Maintain the original graph
+                };
+                
+                return fallbackData;
+            }
         }
-        
-        const data = await response.json();
-        console.log('Received intermediate ship routes data:', data);
-        
-        return data;
-    } catch (error) {
-        console.error('Fetch intermediate ship routes error:', error);
-        throw error;
     }
+    
+    // This should only happen if all retries fail and we also fail to generate fallback data
+    console.error("All attempts to fetch intermediate routes failed");
+    return {
+        path: path,
+        isGeneratedFallback: true,
+        error: "Failed to fetch intermediate routes after multiple attempts"
+    };
 };
 
 /**
@@ -2128,7 +2186,8 @@ export const enhanceMultimodalGraphWithIntermediateRoutes = async (graph, startD
 export const dataStore = {
   seaRoutesGraph: null,
   intermediateRoutes: null,
-  airRoutesGraph: null
+  airRoutesGraph: null,
+  multimodalGraph: null
 };
 
 // Make dataStore globally available for debugging
@@ -2162,15 +2221,45 @@ export const storeSeaRoutesGraph = async (data) => {
 export const storeIntermediateRoutes = async (data) => {
   try {
     console.log('Storing intermediate routes data in memory');
-    dataStore.intermediateRoutes = data;
-    console.log('Intermediate routes data stored successfully in memory');
     
-    // Automatically transform the data to an enhanced graph format
-    if (data && Object.keys(data).length > 0) {
-      transformIntermediateAirRoutesToGraph(data);
+    // Check if data is valid before storing
+    if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
+      console.warn('Invalid or empty intermediate routes data provided');
+      return { success: false, message: 'Invalid or empty data' };
     }
     
-    return { success: true };
+    // Store the intermediate routes
+    dataStore.intermediateRoutes = data;
+    console.log('Intermediate routes data stored successfully in memory');
+    console.log('DATA KEYS:', Object.keys(data).join(', '));
+    
+    // Immediately transform to air routes graph - run synchronously for debugging purposes
+    console.log('==== DIRECT TRANSFORMATION TO AIR ROUTES GRAPH ====');
+    try {
+      // Directly transform the data (not in setTimeout)
+      const airRoutesGraph = transformIntermediateAirRoutesToGraph(data);
+      
+      // Double verify after transformation
+      console.log('FINAL VERIFICATION OF AIR ROUTES STORAGE:');
+      console.log('dataStore.airRoutesGraph airports:', Object.keys(dataStore.airRoutesGraph).length);
+      console.log('dataStore.airRoutesGraph total routes:', 
+        Object.values(dataStore.airRoutesGraph).reduce((sum, routes) => sum + routes.length, 0)
+      );
+      
+      return { 
+        success: true, 
+        airRoutesCreated: true,
+        airportCount: Object.keys(dataStore.airRoutesGraph).length,
+        routeCount: Object.values(dataStore.airRoutesGraph).reduce((sum, routes) => sum + routes.length, 0)
+      };
+    } catch (transformError) {
+      console.error('Error in direct transformation:', transformError);
+      return { 
+        success: true, 
+        airRoutesCreated: false, 
+        error: transformError.message 
+      };
+    }
   } catch (error) {
     console.error('Store intermediate routes data error:', error);
     throw error;
@@ -2226,79 +2315,592 @@ export const getAirRoutesGraph = async () => {
  */
 export const transformIntermediateAirRoutesToGraph = (intermediateRoutesData) => {
   console.log('Transforming intermediate air routes to enhanced graph format');
+  console.log('Input data type:', typeof intermediateRoutesData);
+  console.log('Input data keys:', Object.keys(intermediateRoutesData));
   
   // Create the enhanced graph structure
   const enhancedGraph = {};
   
-  // Process each intermediate route
-  Object.entries(intermediateRoutesData).forEach(([key, data]) => {
-    // Extract the stop/airport and date from the key (e.g., "HKG-07 Apr 2025")
-    const [fromStop, dateStr] = key.split('-');
+  // Skip processing if data is empty or invalid
+  if (!intermediateRoutesData || typeof intermediateRoutesData !== 'object') {
+    console.warn('Invalid intermediate routes data provided');
+    return enhancedGraph;
+  }
+  
+  // Check if the data is in enhancedAirGraph format
+  if (intermediateRoutesData.nodes && intermediateRoutesData.edges && Array.isArray(intermediateRoutesData.edges)) {
+    console.log('Data is in enhancedAirGraph format, converting to airRoutesGraph format');
+    console.log('Number of nodes:', Object.keys(intermediateRoutesData.nodes).length);
+    console.log('Number of edges:', intermediateRoutesData.edges.length);
     
-    if (!fromStop) return;
+    // Initialize airport nodes
+    Object.entries(intermediateRoutesData.nodes).forEach(([airportCode, nodeData]) => {
+      if (nodeData.type === 'airport') {
+        enhancedGraph[airportCode] = [];
+        console.log(`Initialized airport node: ${airportCode}`);
+      }
+    });
     
-    // Initialize this airport in the graph if it doesn't exist
+    // Add routes based on edges
+    intermediateRoutesData.edges.forEach((edge, index) => {
+      console.log(`Processing edge ${index + 1}/${intermediateRoutesData.edges.length}:`, edge);
+      
+      if (!edge.from || !edge.to) {
+        console.warn(`Skipping edge with missing from/to:`, edge);
+        return;
+      }
+      
+      // Initialize arrays if they don't exist
+      if (!enhancedGraph[edge.from]) {
+        enhancedGraph[edge.from] = [];
+      }
+      if (!enhancedGraph[edge.to]) {
+        enhancedGraph[edge.to] = [];
+      }
+      
+      const route = {
+        shipId: edge.id || `${edge.from}-${edge.to}_${Date.now()}`,
+        shipName: edge.flight || 'Unknown Flight',
+        voyage: edge.flight ? edge.flight.split(' ')[1] : 'Unknown',
+        fromPort: edge.from,
+        fromPortName: edge.from,
+        toPort: edge.to,
+        toPortName: edge.to,
+        departureTime: edge.departure,
+        arrivalTime: edge.arrival,
+        aircraft: edge.aircraft || 'Unknown',
+        carrier: edge.flight ? edge.flight.split(' ')[0] : 'Unknown',
+        type: 'air',
+        duration: edge.duration || null,
+        isIntermediateRoute: edge.isIntermediateRoute || false,
+        intermediateKey: edge.intermediateKey || null,
+        routeIndex: edge.routeIndex || 0,
+        flightIndex: edge.flightIndex || 0
+      };
+      
+      // Only add the route if it's not already present
+      const routeExists = enhancedGraph[edge.from].some(existingRoute => 
+        existingRoute.shipId === route.shipId
+      );
+      
+      if (!routeExists) {
+        enhancedGraph[edge.from].push(route);
+        console.log(`Added route from ${edge.from} to ${edge.to}`);
+      } else {
+        console.log(`Skipped duplicate route from ${edge.from} to ${edge.to}`);
+      }
+    });
+    
+    console.log(`Converted enhancedAirGraph to airRoutesGraph with ${Object.keys(enhancedGraph).length} airports`);
+    console.log(`Total air routes in enhancedGraph from enhancedAirGraph: ${Object.values(enhancedGraph).reduce((sum, routes) => sum + routes.length, 0)}`);
+    
+    // Store the enhanced air routes graph in the dataStore
+    dataStore.airRoutesGraph = enhancedGraph;
+    
+    return enhancedGraph;
+  }
+  
+  // Process each route entry (original format)
+  for (const [key, data] of Object.entries(intermediateRoutesData)) {
+    // Skip metadata or invalid entries
+    if (key.startsWith('_') || !data) {
+      console.warn(`Skipping invalid entry: ${key}`);
+      continue;
+    }
+    
+    console.log(`Processing route entry: ${key}`, data);
+    
+    // Handle both old and new format
+    const fromStop = data.fromStop || data.origin;
+    const toDestination = data.toDestination || data.destination;
+    
+    if (!fromStop || !toDestination) {
+      console.warn(`Missing fromStop or toDestination in entry ${key}`);
+      continue;
+    }
+    
+    // Initialize arrays for airports if they don't exist
     if (!enhancedGraph[fromStop]) {
       enhancedGraph[fromStop] = [];
     }
-    
-    // Process each route in the routes array
-    if (data.routes && Array.isArray(data.routes)) {
-      data.routes.forEach((routeSegments, routeIndex) => {
-        // Only add if it's a valid route with segments
-        if (Array.isArray(routeSegments) && routeSegments.length > 0) {
-          // Extract the first segment that starts from this stop
-          const firstSegment = routeSegments.find(segment => segment.origin === fromStop);
-          
-          if (firstSegment) {
-            // Create flight information similar to ship voyage format
-            const flightInfo = {
-              shipId: `${firstSegment.carrierCode}${firstSegment.flightNo}`, // Use flight number as shipId
-              shipName: `${firstSegment.carrierCode} ${firstSegment.flightNo}`, // Carrier code + flight number
-              voyage: firstSegment.flightNo,
-              fromPort: firstSegment.origin,
-              fromPortName: firstSegment.origin, // Use code as name since we don't have full names
-              toPort: firstSegment.destination,
-              toPortName: firstSegment.destination,
-              departureTime: firstSegment.deptDateTimesLocal?.[0] || null,
-              arrivalTime: firstSegment.arrDateTimesLocal?.[0] || null,
-              schedule: routeSegments.map(segment => ({
-                port: segment.destination,
-                portName: segment.destination,
-                eta: segment.arrDateTimesLocal?.[0] || null,
-                etd: segment.deptDateTimesLocal?.[0] || null
-              })),
-              type: 'air', // Mark this as an air route
-              aircraft: firstSegment.aircraftType || 'Unknown',
-              carrier: firstSegment.carrierCode
-            };
-            
-            // Check if this flight already exists
-            const flightExists = enhancedGraph[fromStop].some(
-              existingFlight => 
-                existingFlight.shipId === flightInfo.shipId && 
-                existingFlight.departureTime === flightInfo.departureTime
-            );
-            
-            if (!flightExists) {
-              enhancedGraph[fromStop].push(flightInfo);
-            }
-          }
-        }
-      });
+    if (!enhancedGraph[toDestination]) {
+      enhancedGraph[toDestination] = [];
     }
-  });
+    
+    // Process routes if they exist
+    const routes = data.routes || data.flights || [];
+    if (Array.isArray(routes)) {
+      // Track processed flight numbers to avoid duplicates
+      const processedFlights = new Set();
+      
+      // Process each route
+      routes.forEach((route, routeIndex) => {
+        // Handle both array and object formats
+        const routeArray = Array.isArray(route) ? route : [route];
+        
+        if (routeArray.length === 0) {
+          console.warn(`Empty route array for ${fromStop}, route ${routeIndex + 1}`);
+          return;
+        }
+        
+        // Process each segment in the route
+        routeArray.forEach((segment, segmentIndex) => {
+          const origin = segment.origin || fromStop;
+          const destination = segment.destination || toDestination;
+          
+          // Create a unique identifier for this flight
+          const flightId = `${segment.carrierCode || 'UNK'}${segment.flightNo || 'UNK'}_${origin}_${segmentIndex}`;
+          if (processedFlights.has(flightId)) {
+            console.log(`Skipping duplicate flight ${flightId}`);
+            return;
+          }
+          processedFlights.add(flightId);
+          
+          // Create route object
+          const routeObj = {
+            shipId: flightId,
+            shipName: `${segment.carrierCode || 'Unknown'} ${segment.flightNo || 'Unknown'}`,
+            voyage: segment.flightNo || 'Unknown',
+            fromPort: origin,
+            fromPortName: origin,
+            toPort: destination,
+            toPortName: destination,
+            departureTime: segment.deptDateTimesLocal?.[0] || segment.departureTime || data.minDepartureTime || null,
+            arrivalTime: segment.arrDateTimesLocal?.[0] || segment.arrivalTime || data.arrivalTime || null,
+            aircraft: segment.aircraftType || 'Unknown',
+            carrier: segment.carrierCode || 'Unknown',
+            type: 'air',
+            duration: segment.duration || null,
+            isIntermediateRoute: true,
+            intermediateKey: key,
+            routeIndex: routeIndex,
+            flightIndex: segmentIndex
+          };
+          
+          console.log(`Adding route for ${origin}:`, routeObj);
+          enhancedGraph[origin].push(routeObj);
+        });
+      });
+    } else {
+      console.warn(`No routes found for ${fromStop}`);
+    }
+  }
   
   console.log('Transformed air routes graph:', enhancedGraph);
+  console.log(`Created enhanced air graph with ${Object.keys(enhancedGraph).length} airports`);
+  console.log(`Total air routes in enhanced graph: ${Object.values(enhancedGraph).reduce((sum, routes) => sum + routes.length, 0)}`);
   
   // Store the enhanced air routes graph in the dataStore
   dataStore.airRoutesGraph = enhancedGraph;
   
-  // Also make it available in the window object for debugging
-  if (typeof window !== 'undefined') {
-    window.airRoutesGraph = enhancedGraph;
-    console.log('Air routes graph available at window.airRoutesGraph');
+  // Verify the data is stored properly
+  console.log('VERIFICATION: Air routes graph stored in dataStore:', 
+    dataStore.airRoutesGraph ? 
+    `Success - ${Object.keys(dataStore.airRoutesGraph).length} airports and ${Object.values(dataStore.airRoutesGraph).reduce((sum, routes) => sum + routes.length, 0)} routes` : 
+    'Failed - Not stored properly'
+  );
+  
+  // Log sample routes if available
+  if (Object.keys(enhancedGraph).length > 0) {
+    const firstAirport = Object.keys(enhancedGraph)[0];
+    console.log(`Sample routes for ${firstAirport} (${Math.min(5, enhancedGraph[firstAirport].length)} of ${enhancedGraph[firstAirport].length}):`);
+    console.log(JSON.stringify(enhancedGraph[firstAirport].slice(0, 5), null, 2));
   }
   
+  // Make it available in the window object for debugging
+  window.airRoutesGraph = enhancedGraph;
+  
   return enhancedGraph;
+};
+
+/**
+ * Calculate approximate distance between two airports
+ * @param {string} origin - Origin airport code
+ * @param {string} destination - Destination airport code
+ * @returns {number} Distance in kilometers (estimated)
+ */
+function calculateAirDistance(origin, destination) {
+  // This is a simplified implementation - in a real app, you would use actual coordinates
+  // Use a fixed average distance as fallback
+  return 1000; // Default 1000km as fallback
+}
+
+/**
+ * Calculate flight duration from departure and arrival times
+ * @param {string} departureTime - Departure time
+ * @param {string} arrivalTime - Arrival time
+ * @returns {number} Duration in hours
+ */
+function calculateFlightDuration(departureTime, arrivalTime) {
+  if (!departureTime || !arrivalTime) return 2.5; // Default 2.5 hours as fallback
+  
+  try {
+    const departure = new Date(departureTime);
+    const arrival = new Date(arrivalTime);
+    return (arrival - departure) / (1000 * 60 * 60); // Convert to hours
+  } catch (e) {
+    return 2.5; // Default if parsing fails
+  }
+}
+
+/**
+ * Creates connections between seaports and their nearest airports to build a multimodal graph
+ * @returns {Promise<Object>} The complete multimodal graph combining sea and air routes
+ */
+export const buildMultimodalGraph = async () => {
+  console.log('Building multimodal graph from sea and air routes data...');
+  
+  // Check if we have both sea and air routes data
+  if (!dataStore.seaRoutesGraph) {
+    console.error('Cannot build multimodal graph: Missing sea routes data');
+    dataStore.seaRoutesGraph = { nodes: {}, edges: [] };
+  }
+  
+  if (!dataStore.airRoutesGraph) {
+    console.error('Warning: Missing air routes data, proceeding with sea routes only');
+    dataStore.airRoutesGraph = { nodes: {}, edges: [] };
+  }
+  
+  try {
+    // Initialize multimodal graph structure
+    const multimodalGraph = {
+      nodes: {},
+      edges: [],
+      paths: [],
+      metadata: {
+        generatedAt: new Date().toISOString(),
+        source: 'dataStore'
+      }
+    };
+    
+    // Get all unique seaports from the sea routes graph
+    const seaports = Object.keys(dataStore.seaRoutesGraph || {}).filter(key => key !== 'nodes' && key !== 'edges');
+    console.log(`Found ${seaports.length} seaports to process for multimodal connections`);
+    
+    // Get all unique airports from the air routes graph
+    const airports = Object.keys(dataStore.airRoutesGraph || {}).filter(key => key !== 'nodes' && key !== 'edges');
+    console.log(`Found ${airports.length} airports to process for multimodal connections`);
+    
+    // Error handling for intermediate routes
+    if (dataStore.intermediateRoutes) {
+      try {
+        // Process intermediate routes if available
+        const routes = Object.entries(dataStore.intermediateRoutes);
+        console.log(`Processing ${routes.length} intermediate routes`);
+        
+        // Handle any specific error cases with intermediate routes here
+        // ...
+      } catch (err) {
+        console.warn('Error processing intermediate routes, continuing without them:', err.message);
+      }
+    }
+    
+    // Create proper fallbacks for missing data
+    if (!multimodalGraph.nodes) multimodalGraph.nodes = {};
+    if (!multimodalGraph.edges) multimodalGraph.edges = [];
+    
+    console.log('Multimodal graph built with:');
+    console.log(`- ${Object.keys(multimodalGraph.nodes).length} nodes`);
+    console.log(`- ${multimodalGraph.edges.length} edges`);
+    console.log(`- ${multimodalGraph.paths.length} paths`);
+    
+    return multimodalGraph;
+  } catch (err) {
+    console.error('Error building multimodal graph:', err);
+    // Return a minimal valid graph structure on error
+    return {
+      nodes: {},
+      edges: [],
+      paths: [],
+      metadata: {
+        generatedAt: new Date().toISOString(),
+        source: 'error',
+        error: err.message
+      }
+    };
+  }
+};
+
+/**
+ * Gets details of an airport by IATA code
+ * @param {string} iataCode - IATA code of the airport
+ * @returns {Promise<Object>} Airport details
+ */
+export const getAirportDetails = async (iataCode) => {
+  try {
+    // Use existing API functions to get airport details
+    // This is a simplified version - in a real app, you would have proper airport data lookup
+    const airports = await fetchFreightPorts('air');
+    return airports.find(airport => airport.code === iataCode);
+  } catch (error) {
+    console.error(`Error getting airport details for ${iataCode}:`, error);
+    return null;
+  }
+};
+
+/**
+ * Find the nearest airports to a given location
+ * @param {number} lat - Latitude of the location
+ * @param {number} lng - Longitude of the location
+ * @param {number} limit - Maximum number of airports to return
+ * @returns {Promise<Array>} Array of nearest airports
+ */
+export const getNearestAirports = async (lat, lng, limit = 3) => {
+  try {
+    // Use the existing API function but with type=airport
+    const response = await fetch(`/api/nearest?lat=${lat}&lng=${lng}&type=airport&limit=${limit}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch nearest airports');
+    }
+    const data = await response.json();
+    
+    // Sort by distance to ensure closest is first
+    const airports = data.airports || [];
+    airports.sort((a, b) => a.distance - b.distance);
+    
+    // Add a flag to indicate which is the primary (closest) airport
+    if (airports.length > 0) {
+      airports[0].isPrimary = true;
+    }
+    
+    return airports;
+  } catch (error) {
+    console.error('Error finding nearest airports:', error);
+    return [];
+  }
+};
+
+/**
+ * Creates combined sea-air and air-sea graphs by finding nearest ports and airports
+ * @param {Object} seaRoutesGraph - The sea routes graph
+ * @param {Object} airRoutesGraph - The air routes graph
+ * @returns {Promise<Object>} Object containing seaAirGraph and airSeaGraph
+ */
+export const createCombinedGraphs = async (seaRoutesGraph, airRoutesGraph) => {
+  console.log('Creating combined sea-air and air-sea graphs');
+  
+  // Initialize the combined graphs
+  const seaAirGraph = {};
+  const airSeaGraph = {};
+  
+  // Clean up and limit the input graphs to top 20 routes
+  const cleanSeaGraph = {};
+  const cleanAirGraph = {};
+  
+  // Clean up sea routes graph
+  for (const [port, routes] of Object.entries(seaRoutesGraph)) {
+    if (routes && Array.isArray(routes)) {
+      cleanSeaGraph[port] = routes.slice(0, 20);
+    }
+  }
+  
+  // Clean up air routes graph
+  for (const [airport, routes] of Object.entries(airRoutesGraph)) {
+    if (routes && Array.isArray(routes)) {
+      cleanAirGraph[airport] = routes.slice(0, 20);
+    }
+  }
+  
+  // Process sea-air connections
+  for (const [port, routes] of Object.entries(cleanSeaGraph)) {
+    if (!routes || routes.length === 0) continue;
+    
+    // Get port location from first route
+    const portLocation = {
+      lat: parseFloat(routes[0].fromPortLat),
+      lng: parseFloat(routes[0].fromPortLng)
+    };
+    
+    try {
+      // Find nearest airports to this port
+      const nearestAirports = await getNearestAirports(portLocation.lat, portLocation.lng, 3);
+      
+      if (!nearestAirports || nearestAirports.length === 0) continue;
+      
+      // Initialize sea-air connections for this port
+      seaAirGraph[port] = [];
+      
+      // For each nearest airport, find air routes to destinations
+      for (const airport of nearestAirports) {
+        const airportCode = airport.code;
+        
+        // Get air routes from this airport
+        const airRoutes = cleanAirGraph[airportCode] || [];
+        
+        // Create combined routes
+        for (const seaRoute of routes) {
+          for (const airRoute of airRoutes) {
+            // Create a combined route
+            const combinedRoute = {
+              type: 'sea-air',
+              seaSegment: {
+                ...seaRoute,
+                toPort: airportCode,
+                toPortName: airport.name
+              },
+              airSegment: {
+                ...airRoute,
+                fromPort: airportCode,
+                fromPortName: airport.name
+              },
+              totalDistance: (seaRoute.distance || 0) + (airRoute.distance || 0),
+              totalDuration: (seaRoute.duration || 0) + (airRoute.duration || 0)
+            };
+            
+            seaAirGraph[port].push(combinedRoute);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error processing sea-air connections for port ${port}:`, error);
+    }
+  }
+  
+  // Process air-sea connections
+  for (const [airport, routes] of Object.entries(cleanAirGraph)) {
+    if (!routes || routes.length === 0) continue;
+    
+    // Get airport location from first route
+    const airportLocation = {
+      lat: parseFloat(routes[0].fromPortLat),
+      lng: parseFloat(routes[0].fromPortLng)
+    };
+    
+    try {
+      // Find nearest seaports to this airport
+      const nearestSeaports = await getNearestSeaports(airportLocation.lat, airportLocation.lng, 3);
+      
+      if (!nearestSeaports || nearestSeaports.length === 0) continue;
+      
+      // Initialize air-sea connections for this airport
+      airSeaGraph[airport] = [];
+      
+      // For each nearest seaport, find sea routes to destinations
+      for (const seaport of nearestSeaports) {
+        const seaportCode = seaport.code;
+        
+        // Get sea routes from this seaport
+        const seaRoutes = cleanSeaGraph[seaportCode] || [];
+        
+        // Create combined routes
+        for (const airRoute of routes) {
+          for (const seaRoute of seaRoutes) {
+            // Create a combined route
+            const combinedRoute = {
+              type: 'air-sea',
+              airSegment: {
+                ...airRoute,
+                toPort: seaportCode,
+                toPortName: seaport.name
+              },
+              seaSegment: {
+                ...seaRoute,
+                fromPort: seaportCode,
+                fromPortName: seaport.name
+              },
+              totalDistance: (airRoute.distance || 0) + (seaRoute.distance || 0),
+              totalDuration: (airRoute.duration || 0) + (seaRoute.duration || 0)
+            };
+            
+            airSeaGraph[airport].push(combinedRoute);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error processing air-sea connections for airport ${airport}:`, error);
+    }
+  }
+  
+  // Store the combined graphs in the dataStore
+  dataStore.seaAirGraph = seaAirGraph;
+  dataStore.airSeaGraph = airSeaGraph;
+  
+  console.log('Combined graphs created successfully:');
+  console.log(`Sea-Air graph: ${Object.keys(seaAirGraph).length} ports with connections`);
+  console.log(`Air-Sea graph: ${Object.keys(airSeaGraph).length} airports with connections`);
+  
+  return {
+    seaAirGraph,
+    airSeaGraph
+  };
+};
+
+/**
+ * Find the nearest seaports to a given location
+ * @param {number} lat - Latitude of the location
+ * @param {number} lng - Longitude of the location
+ * @param {number} limit - Maximum number of seaports to return
+ * @returns {Promise<Array>} Array of nearest seaports
+ */
+export const getNearestSeaports = async (lat, lng, limit = 3) => {
+  try {
+    // Use the existing API function if it exists, or implement a simplified version
+    // This is a simplified implementation that finds seaports within 200km of the location
+    const seaports = await fetchFreightPorts('sea');
+    
+    if (!seaports || !Array.isArray(seaports)) {
+      console.error('Failed to fetch seaports data');
+      return [];
+    }
+    
+    // Calculate distance for each seaport and sort by distance
+    const seaportsWithDistance = seaports.map(seaport => {
+      if (!seaport.latitude_dd || !seaport.longitude_dd) return null;
+      
+      const distance = calculateDistance(
+        lat, 
+        lng, 
+        parseFloat(seaport.latitude_dd), 
+        parseFloat(seaport.longitude_dd)
+      );
+      
+      return {
+        ...seaport,
+        distance
+      };
+    }).filter(seaport => seaport !== null);
+    
+    // Sort by distance and get the nearest ones
+    const nearestSeaports = seaportsWithDistance
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, limit);
+    
+    console.log(`Found ${nearestSeaports.length} seaports near location [${lat}, ${lng}]`);
+    return nearestSeaports;
+  } catch (error) {
+    console.error('Error finding nearest seaports:', error);
+    return [];
+  }
+};
+
+/**
+ * Find the nearest ports to a given location
+ * @param {number} lat - Latitude of the location
+ * @param {number} lng - Longitude of the location
+ * @param {number} limit - Maximum number of ports to return
+ * @returns {Promise<Array>} Array of nearest ports
+ */
+export const getNearestPorts = async (lat, lng, limit = 3) => {
+  try {
+    // Use the existing API function but with type=seaport
+    const response = await fetch(`/api/nearest?lat=${lat}&lng=${lng}&type=seaport&limit=${limit}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch nearest ports');
+    }
+    const data = await response.json();
+    
+    // Sort by distance to ensure closest is first
+    const ports = data.seaports || [];
+    ports.sort((a, b) => a.distance - b.distance);
+    
+    // Add a flag to indicate which is the primary (closest) port
+    if (ports.length > 0) {
+      ports[0].isPrimary = true;
+    }
+    
+    return ports;
+  } catch (error) {
+    console.error('Error finding nearest ports:', error);
+    return [];
+  }
 };

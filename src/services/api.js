@@ -2123,3 +2123,182 @@ export const enhanceMultimodalGraphWithIntermediateRoutes = async (graph, startD
         throw error;
     }
 };
+
+// In-memory data store for enhanced graphs and routes
+export const dataStore = {
+  seaRoutesGraph: null,
+  intermediateRoutes: null,
+  airRoutesGraph: null
+};
+
+// Make dataStore globally available for debugging
+if (typeof window !== 'undefined') {
+  window.routesDataStore = dataStore;
+  console.log('Routes data store available at window.routesDataStore');
+}
+
+/**
+ * Stores the sea routes graph data to the server
+ * @param {Object} data - The sea routes graph data to store
+ * @returns {Promise<Object>} - Response indicating success or failure
+ */
+export const storeSeaRoutesGraph = async (data) => {
+  try {
+    console.log('Storing sea routes graph data in memory');
+    dataStore.seaRoutesGraph = data;
+    console.log('Sea routes graph stored successfully in memory');
+    return { success: true };
+  } catch (error) {
+    console.error('Store sea routes graph error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Stores the intermediate routes data to the server
+ * @param {Object} data - The intermediate routes data to store
+ * @returns {Promise<Object>} - Response indicating success or failure
+ */
+export const storeIntermediateRoutes = async (data) => {
+  try {
+    console.log('Storing intermediate routes data in memory');
+    dataStore.intermediateRoutes = data;
+    console.log('Intermediate routes data stored successfully in memory');
+    
+    // Automatically transform the data to an enhanced graph format
+    if (data && Object.keys(data).length > 0) {
+      transformIntermediateAirRoutesToGraph(data);
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Store intermediate routes data error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Retrieves the sea routes graph data from the server
+ * @returns {Promise<Object>} - The sea routes graph data
+ */
+export const getSeaRoutesGraph = async () => {
+  try {
+    console.log('Retrieving sea routes graph data from memory');
+    return dataStore.seaRoutesGraph;
+  } catch (error) {
+    console.error('Get sea routes graph error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Retrieves the intermediate routes data from the server
+ * @returns {Promise<Object>} - The intermediate routes data
+ */
+export const getIntermediateRoutes = async () => {
+  try {
+    console.log('Retrieving intermediate routes data from memory');
+    return dataStore.intermediateRoutes;
+  } catch (error) {
+    console.error('Get intermediate routes data error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Retrieves the air routes graph data from the server
+ * @returns {Promise<Object>} - The air routes graph data
+ */
+export const getAirRoutesGraph = async () => {
+  try {
+    console.log('Retrieving air routes graph data from memory');
+    return dataStore.airRoutesGraph;
+  } catch (error) {
+    console.error('Get air routes graph error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Transforms intermediate air routes data into an enhanced graph format similar to sea routes
+ * @param {Object} intermediateRoutesData - The intermediate routes data to transform
+ * @returns {Object} - The transformed air routes graph
+ */
+export const transformIntermediateAirRoutesToGraph = (intermediateRoutesData) => {
+  console.log('Transforming intermediate air routes to enhanced graph format');
+  
+  // Create the enhanced graph structure
+  const enhancedGraph = {};
+  
+  // Process each intermediate route
+  Object.entries(intermediateRoutesData).forEach(([key, data]) => {
+    // Extract the stop/airport and date from the key (e.g., "HKG-07 Apr 2025")
+    const [fromStop, dateStr] = key.split('-');
+    
+    if (!fromStop) return;
+    
+    // Initialize this airport in the graph if it doesn't exist
+    if (!enhancedGraph[fromStop]) {
+      enhancedGraph[fromStop] = [];
+    }
+    
+    // Process each route in the routes array
+    if (data.routes && Array.isArray(data.routes)) {
+      data.routes.forEach((routeSegments, routeIndex) => {
+        // Only add if it's a valid route with segments
+        if (Array.isArray(routeSegments) && routeSegments.length > 0) {
+          // Extract the first segment that starts from this stop
+          const firstSegment = routeSegments.find(segment => segment.origin === fromStop);
+          
+          if (firstSegment) {
+            // Create flight information similar to ship voyage format
+            const flightInfo = {
+              shipId: `${firstSegment.carrierCode}${firstSegment.flightNo}`, // Use flight number as shipId
+              shipName: `${firstSegment.carrierCode} ${firstSegment.flightNo}`, // Carrier code + flight number
+              voyage: firstSegment.flightNo,
+              fromPort: firstSegment.origin,
+              fromPortName: firstSegment.origin, // Use code as name since we don't have full names
+              toPort: firstSegment.destination,
+              toPortName: firstSegment.destination,
+              departureTime: firstSegment.deptDateTimesLocal?.[0] || null,
+              arrivalTime: firstSegment.arrDateTimesLocal?.[0] || null,
+              schedule: routeSegments.map(segment => ({
+                port: segment.destination,
+                portName: segment.destination,
+                eta: segment.arrDateTimesLocal?.[0] || null,
+                etd: segment.deptDateTimesLocal?.[0] || null
+              })),
+              type: 'air', // Mark this as an air route
+              aircraft: firstSegment.aircraftType || 'Unknown',
+              carrier: firstSegment.carrierCode
+            };
+            
+            // Check if this flight already exists
+            const flightExists = enhancedGraph[fromStop].some(
+              existingFlight => 
+                existingFlight.shipId === flightInfo.shipId && 
+                existingFlight.departureTime === flightInfo.departureTime
+            );
+            
+            if (!flightExists) {
+              enhancedGraph[fromStop].push(flightInfo);
+            }
+          }
+        }
+      });
+    }
+  });
+  
+  console.log('Transformed air routes graph:', enhancedGraph);
+  
+  // Store the enhanced air routes graph in the dataStore
+  dataStore.airRoutesGraph = enhancedGraph;
+  
+  // Also make it available in the window object for debugging
+  if (typeof window !== 'undefined') {
+    window.airRoutesGraph = enhancedGraph;
+    console.log('Air routes graph available at window.airRoutesGraph');
+  }
+  
+  return enhancedGraph;
+};

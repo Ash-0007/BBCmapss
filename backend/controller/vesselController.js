@@ -402,6 +402,16 @@ const getIntermediateShipRoutes = async (req, res) => {
             });
         }
         
+        // Generate a cache key using the path and date
+        const cacheKey = `${path.join('_')}_${startDate}`;
+        
+        // Check cache first (using voyageCache since it's already set up)
+        const cachedResult = voyageCache.get('intermediate', cacheKey);
+        if (cachedResult) {
+            console.log(`Using cached intermediate routes for path ${path.join('->')} and date ${startDate}`);
+            return res.json(cachedResult);
+        }
+        
         // Extract start and end points
         const startPoint = path[0];
         const endPoint = path[path.length - 1];
@@ -484,68 +494,114 @@ const getIntermediateShipRoutes = async (req, res) => {
         // Fetch ship routes for each intermediate point to the end point
         const intermediateRoutes = {};
         
-        // For each intermediate point
-        for (let i = 0; i < intermediatePoints.length; i++) {
-            const intermediatePoint = intermediatePoints[i];
+        // Process intermediate points in parallel batches
+        const batchSize = 3; // Process 3 intermediate points at a time
+        const completeGraph = req.body.completeGraph || null;
+        
+        for (let i = 0; i < intermediatePoints.length; i += batchSize) {
+            const batch = intermediatePoints.slice(i, i + batchSize);
+            console.log(`Processing batch ${Math.floor(i/batchSize) + 1} of intermediate points: ${batch.join(', ')}`);
             
-            // Determine the departure date for this intermediate point
-            let departureDate = formattedStartDate;
-            
-            // If we have arrival times for this intermediate point, use the earliest one
-            if (intermediatePortArrivalTimes[intermediatePoint] && intermediatePortArrivalTimes[intermediatePoint].length > 0) {
-                // Sort arrival times chronologically
-                const sortedArrivals = [...intermediatePortArrivalTimes[intermediatePoint]].sort((a, b) => {
-                    const dateA = new Date(a.arrivalTime);
-                    const dateB = new Date(b.arrivalTime);
-                    return dateA - dateB;
-                });
+            // Process each intermediate point in this batch in parallel
+            await Promise.all(batch.map(async (intermediatePoint) => {
+                // Determine the departure date for this intermediate point
+                let departureDate = formattedStartDate;
                 
-                // Use the earliest arrival time as the departure date for the next leg
-                const earliestArrival = sortedArrivals[0].arrivalTime;
-                console.log(`Using earliest arrival time at ${intermediatePoint} (${earliestArrival}) as departure date for next leg`);
-                
-                // Parse the arrival time and format it for the API
-                const arrivalDate = new Date(earliestArrival);
-                if (!isNaN(arrivalDate.getTime())) {
-                    departureDate = formatDateYYYYMMDD(arrivalDate);
-                    console.log(`Formatted departure date for ${intermediatePoint}: ${departureDate}`);
+                // If we have arrival times for this intermediate point, use the earliest one
+                if (intermediatePortArrivalTimes[intermediatePoint] && intermediatePortArrivalTimes[intermediatePoint].length > 0) {
+                    // Sort arrival times chronologically
+                    const sortedArrivals = [...intermediatePortArrivalTimes[intermediatePoint]].sort((a, b) => {
+                        const dateA = new Date(a.arrivalTime);
+                        const dateB = new Date(b.arrivalTime);
+                        return dateA - dateB;
+                    });
+                    
+                    // Use the earliest arrival time as the departure date for the next leg
+                    const earliestArrival = sortedArrivals[0].arrivalTime;
+                    console.log(`Using earliest arrival time at ${intermediatePoint} (${earliestArrival}) as departure date for next leg`);
+                    
+                    // Parse the arrival time and format it for the API
+                    const arrivalDate = new Date(earliestArrival);
+                    if (!isNaN(arrivalDate.getTime())) {
+                        departureDate = formatDateYYYYMMDD(arrivalDate);
+                        console.log(`Formatted departure date for ${intermediatePoint}: ${departureDate}`);
+                    }
                 }
-            }
-            
-            console.log(`Fetching routes from ${intermediatePoint} to ${endPoint} with date ${departureDate}`);
-            
-            try {
-                const routes = await fetchShipRoutesFromHapagLloyd(intermediatePoint, endPoint, departureDate);
-                console.log(`Routes from ${intermediatePoint} to ${endPoint}:`, JSON.stringify(routes, null, 2));
                 
-                if (routes && !routes.error) {
-                    // Store the routes for this intermediate point
-                    intermediateRoutes[intermediatePoint] = routes;
+                // Generate cache key for this intermediate route
+                const intermediateRouteKey = `${intermediatePoint}_${endPoint}_${departureDate}`;
+                
+                // Check cache for this specific intermediate route
+                const cachedIntermediateRoute = voyageCache.get('intermediate_route', intermediateRouteKey);
+                if (cachedIntermediateRoute) {
+                    console.log(`Using cached route from ${intermediatePoint} to ${endPoint} for date ${departureDate}`);
+                    intermediateRoutes[intermediatePoint] = cachedIntermediateRoute;
                     
                     // If we have a complete graph, add these routes to it
-                    if (completeGraph) {
+                    if (completeGraph && cachedIntermediateRoute.routeTree && cachedIntermediateRoute.routeTree.voyages) {
                         // Add the routes to the complete graph
                         if (!completeGraph[intermediatePoint]) {
                             completeGraph[intermediatePoint] = [];
                         }
                         
                         // Add each voyage to the graph
-                        if (routes.routeTree && routes.routeTree.voyages) {
-                            routes.routeTree.voyages.forEach(voyage => {
+                        cachedIntermediateRoute.routeTree.voyages.forEach(voyage => {
+                            const routeExists = completeGraph[intermediatePoint].some(
+                                existingRoute => existingRoute.shipId === voyage.shipId && existingRoute.voyage === voyage.voyage
+                            );
+                            
+                            if (!routeExists) {
                                 completeGraph[intermediatePoint].push(voyage);
-                            });
-                        }
+                            }
+                        });
                     }
-                } else {
-                    console.log(`No routes found from ${intermediatePoint} to ${endPoint}`);
+                    return;
                 }
-            } catch (error) {
-                console.error(`Error fetching routes from ${intermediatePoint} to ${endPoint}:`, error);
-                // Continue with the next intermediate point
-            }
+                
+                console.log(`Fetching routes from ${intermediatePoint} to ${endPoint} with date ${departureDate}`);
+                
+                try {
+                    const routes = await fetchShipRoutesFromHapagLloyd(intermediatePoint, endPoint, departureDate);
+                    console.log(`Routes from ${intermediatePoint} to ${endPoint}:`, JSON.stringify(routes, null, 2));
+                    
+                    if (routes && !routes.error) {
+                        // Store the routes for this intermediate point
+                        intermediateRoutes[intermediatePoint] = routes;
+                        
+                        // Cache this intermediate route for future use
+                        voyageCache.set('intermediate_route', intermediateRouteKey, routes);
+                        
+                        // If we have a complete graph, add these routes to it
+                        if (completeGraph) {
+                            // Add the routes to the complete graph
+                            if (!completeGraph[intermediatePoint]) {
+                                completeGraph[intermediatePoint] = [];
+                            }
+                            
+                            // Add each voyage to the graph
+                            if (routes.routeTree && routes.routeTree.voyages) {
+                                routes.routeTree.voyages.forEach(voyage => {
+                                    const routeExists = completeGraph[intermediatePoint].some(
+                                        existingRoute => existingRoute.shipId === voyage.shipId && existingRoute.voyage === voyage.voyage
+                                    );
+                                    
+                                    if (!routeExists) {
+                                        completeGraph[intermediatePoint].push(voyage);
+                                    }
+                                });
+                            }
+                        }
+                    } else {
+                        console.log(`No routes found from ${intermediatePoint} to ${endPoint}`);
+                    }
+                } catch (error) {
+                    console.error(`Error fetching routes from ${intermediatePoint} to ${endPoint}:`, error);
+                    // Continue with the next intermediate point
+                }
+            }));
         }
         
-        // Return the result
+        // Prepare the result
         const result = {
             path,
             intermediatePortArrivalTimes,
@@ -553,7 +609,10 @@ const getIntermediateShipRoutes = async (req, res) => {
             completeGraph: completeGraph || null
         };
         
-        console.log('Intermediate routes result:', JSON.stringify(result, null, 2));
+        // Cache the full result for future use
+        voyageCache.set('intermediate', cacheKey, result);
+        
+        console.log('Intermediate routes result prepared');
         
         return res.json(result);
     } catch (error) {

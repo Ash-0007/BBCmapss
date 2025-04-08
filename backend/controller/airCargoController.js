@@ -7,12 +7,20 @@ const CathayCargo = require('../CathayCargoApiExtractor');
 const getAirCargoRoutes = async (req, res) => {
   const { origin, destination, flightDate, debug } = req.body;
 
-  if (global.Token === "") {
+  // Create cargo client instance
+  const cargo = new CathayCargo();
+
+  // Check if token exists or refresh if needed
+  if (!global.Token || global.Token === "") {
     logger.info('AirCargo', 'No token found, fetching new API token');
-    const cargo = new CathayCargo();
-    global.Token = await cargo.getApiToken();
-    global.Token = global.Token["access_token"];
-    logger.info('AirCargo', 'New token fetched successfully');
+    const tokenData = await cargo.getApiToken();
+    if (tokenData && tokenData["access_token"]) {
+      global.Token = tokenData["access_token"];
+      logger.info('AirCargo', 'New token fetched successfully');
+    } else {
+      logger.error('AirCargo', 'Failed to fetch API token');
+      return res.status(500).json({ error: 'Failed to authenticate with Cathay Cargo API' });
+    }
   }
 
   const url = "https://api.cathaypacific.com/cargo-flights/v1/flight-schedule/search";
@@ -49,11 +57,37 @@ const getAirCargoRoutes = async (req, res) => {
   try {
     logger.info('AirCargo', `Sending request to Cathay Pacific API: ${url}`);
     
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
     });
+
+    // Handle token expiration - if 401, refresh the token and retry
+    if (response.status === 401) {
+      logger.warn('AirCargo', 'Authentication failed (401), refreshing token and retrying');
+      
+      // Force refresh cookies and token
+      await cargo.refreshCookies();
+      const tokenData = await cargo.getApiToken();
+      
+      if (tokenData && tokenData["access_token"]) {
+        global.Token = tokenData["access_token"];
+        logger.info('AirCargo', 'Token refreshed successfully, retrying request');
+        
+        // Update headers with new token
+        headers.authorization = `Bearer ${global.Token}`;
+        
+        // Retry the request
+        response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        });
+      } else {
+        throw new Error('Failed to refresh authentication token');
+      }
+    }
 
     logger.info('AirCargo', `Response status: ${response.status} ${response.statusText}`);
     if (!response.ok) {
@@ -81,7 +115,9 @@ const getAirCargoRoutes = async (req, res) => {
     logger.error('AirCargo', `ERROR: ${err.message}`);
     
     if (err.message.includes('401')) {
-      logger.error('AirCargo', 'Authentication error - Token may be expired');
+      logger.error('AirCargo', 'Authentication error - Token expired');
+      // Reset token so it will be refreshed on next request
+      global.Token = "";
     }
     
     res.status(500).json({ error: err.message });

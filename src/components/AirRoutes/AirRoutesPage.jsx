@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import styles from '../../assets/MapComponent.module.scss';
+import { fetchHapagShipRoutesGraph } from '../../services/api';
 
 const App = ({ origin, destination, flightDate }) => {
   const [flightData, setFlightData] = useState(null);
@@ -14,6 +15,12 @@ const App = ({ origin, destination, flightDate }) => {
   const [intermediateRoutes, setIntermediateRoutes] = useState({});
   const [loadingIntermediates, setLoadingIntermediates] = useState(false);
   const [showEnhancedGraph, setShowEnhancedGraph] = useState(false);
+  
+  // Add states for multimodal transport
+  const [nearestSeaports, setNearestSeaports] = useState({});
+  const [seaRoutesData, setSeaRoutesData] = useState({});
+  const [loadingSeaRoutes, setLoadingSeaRoutes] = useState(false);
+  const [multimodalGraph, setMultimodalGraph] = useState(null);
 
   const fetchFlightData = async () => {
     if (!flightDate) {
@@ -48,7 +55,10 @@ const App = ({ origin, destination, flightDate }) => {
         }),
       });
 
-      if (!res.ok) throw new Error(`Error: ${res.status}`);
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Error: ${res.status} - ${errorText}`);
+      }
 
       const data = await res.json();
       
@@ -82,7 +92,7 @@ const App = ({ origin, destination, flightDate }) => {
       }
     } catch (err) {
       console.error("Error in fetchFlightData:", err);
-      setError(err.message);
+      setError(`Failed to fetch flight data: ${err.message}`);
     } finally {
       setLoading(false);
     }

@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { fetchHapagShipRoutesGraph, fetchIntermediateShipRoutes } from '../../services/api';
+import { 
+    fetchHapagShipRoutesGraph, 
+    fetchIntermediateShipRoutes, 
+    storeSeaRoutesGraph, 
+    storeIntermediateRoutes,
+    transformIntermediateAirRoutesToGraph,
+    dataStore 
+} from '../../services/api';
 import styles from '../../assets/MapComponent.module.scss';
 import MultimodalTransportGraph from './MultimodalTransportGraph';
 
@@ -10,6 +17,43 @@ const ShipRoutesDisplay = ({ startSeaport, endSeaport, dateRange }) => {
     const [shipRoutes, setShipRoutes] = useState([]);
     const [intermediateRoutes, setIntermediateRoutes] = useState(null);
     const [enhancedGraph, setEnhancedGraph] = useState(null);
+    const [processedPorts, setProcessedPorts] = useState(new Set()); // Track processed ports to avoid duplicates
+    const [showDebugInfo, setShowDebugInfo] = useState(false);
+    const [showDebugDetails, setShowDebugDetails] = useState(false);
+    
+    // Watch for changes to the enhanced graph and automatically store it
+    useEffect(() => {
+        if (enhancedGraph && Object.keys(enhancedGraph).length > 0) {
+            console.log("Enhanced graph is ready, storing it...");
+            storeSeaRoutesGraph(enhancedGraph)
+                .then(() => {
+                    console.log("Enhanced graph stored successfully in memory");
+                    // Store it in window for global access if needed
+                    window.seaRoutesGraph = enhancedGraph;
+                    console.log("Enhanced graph also available at window.seaRoutesGraph");
+                })
+                .catch(err => console.error("Error storing enhanced graph:", err));
+        }
+    }, [enhancedGraph]);
+    
+    // Watch for changes to intermediate routes and automatically store them
+    useEffect(() => {
+        if (intermediateRoutes && Object.keys(intermediateRoutes).length > 0) {
+            console.log("Intermediate routes are ready, storing them...");
+            storeIntermediateRoutes(intermediateRoutes)
+                .then(() => {
+                    console.log("Intermediate routes stored successfully in memory");
+                    // Store it in window for global access if needed
+                    window.intermediateRoutes = intermediateRoutes;
+                    console.log("Intermediate routes also available at window.intermediateRoutes");
+                    
+                    // Transform the intermediate air routes data to graph format
+                    const airRoutesGraph = transformIntermediateAirRoutesToGraph(intermediateRoutes);
+                    console.log("Air routes graph created with", Object.keys(airRoutesGraph).length, "airports");
+                })
+                .catch(err => console.error("Error storing intermediate routes:", err));
+        }
+    }, [intermediateRoutes]);
     
     // Function to get formatted date for API request
     const getFormattedDate = () => {
@@ -29,6 +73,8 @@ const ShipRoutesDisplay = ({ startSeaport, endSeaport, dateRange }) => {
     // Fetch ship routes data when the component mounts or when ports/dates change
     useEffect(() => {
         if (startSeaport && endSeaport) {
+            // Reset processedPorts when ports or dates change
+            setProcessedPorts(new Set());
             fetchShipRoutesData();
         }
     }, [startSeaport, endSeaport, dateRange]);
@@ -97,10 +143,13 @@ const ShipRoutesDisplay = ({ startSeaport, endSeaport, dateRange }) => {
                 // Store the initial graph
                 setEnhancedGraph(routesData.graph);
                 
-                // After getting the initial routes, fetch intermediate routes
+                // Add start port to processed ports
+                setProcessedPorts(prev => new Set([...prev, startPortCode]));
+                
+                // After getting the initial routes, fetch intermediate routes in batches
                 fetchIntermediateRoutesData(routesData.completeRoutes, formattedDate);
                 
-                // Also enhance the graph with intermediate routes
+                // Use optimized graph enhancement with batching and caching
                 enhanceGraphWithIntermediateRoutes(routesData.graph, endPortCode);
                 
                 // Calculate all routes from starting port to intermediate ports
@@ -136,7 +185,7 @@ const ShipRoutesDisplay = ({ startSeaport, endSeaport, dateRange }) => {
         }
     };
     
-    // Function to enhance the graph with intermediate routes
+    // Function to enhance the graph with intermediate routes, optimized with batching
     const enhanceGraphWithIntermediateRoutes = async (graph, endPortCode) => {
         if (!graph) return;
         
@@ -145,63 +194,90 @@ const ShipRoutesDisplay = ({ startSeaport, endSeaport, dateRange }) => {
         // Create a copy of the graph to avoid modifying the original
         const enhancedGraphCopy = { ...graph };
         
-        // Process each port in the graph
-        for (const [portCode, routes] of Object.entries(graph)) {
-            // Skip the end port as we don't need routes from there
-            if (portCode === endPortCode) continue;
+        // Get all port codes from the graph excluding the end port
+        const portCodes = Object.keys(graph).filter(code => code !== endPortCode);
+        console.log(`Found ${portCodes.length} ports to process for intermediate routes`);
+        
+        // Skip already processed ports
+        const portsToProcess = portCodes.filter(code => !processedPorts.has(code));
+        console.log(`Processing ${portsToProcess.length} ports (${portCodes.length - portsToProcess.length} already processed)`);
+        
+        // Process ports in smaller batches to avoid too many parallel requests
+        const batchSize = 2; // Process 2 ports at a time
+        
+        for (let i = 0; i < portsToProcess.length; i += batchSize) {
+            const batch = portsToProcess.slice(i, i + batchSize);
+            console.log(`Processing batch ${i/batchSize + 1}: ${batch.join(', ')}`);
             
-            console.log(`Processing routes from ${portCode} to ${endPortCode}`);
-            
-            // Process each route from this port
-            for (const route of routes) {
-                // Extract the arrival date from this route
-                const arrivalDate = route.arrivalTime;
+            // Process each port in this batch in parallel
+            await Promise.all(batch.map(async (portCode) => {
+                // Mark this port as processed
+                setProcessedPorts(prev => new Set([...prev, portCode]));
                 
-                if (!arrivalDate) {
-                    console.log(`No arrival date found for route from ${portCode} to ${route.toPort}`);
-                    continue;
-                }
+                // Get the first route for this port (to avoid redundant API calls)
+                const routes = graph[portCode] || [];
+                if (routes.length === 0) return;
                 
-                // Format the arrival date to YYYY-MM-DD
-                const formattedArrivalDate = arrivalDate.split('T')[0];
-                console.log(`Using formatted arrival date ${formattedArrivalDate} for route from ${portCode} to ${endPortCode}`);
+                // Process multiple routes for this port to find more connections
+                // but limit to 2 routes to avoid excessive API calls
+                const routesToProcess = routes.slice(0, 2);
                 
-                try {
-                    // Fetch routes from this port to the end port using the formatted arrival date
-                    const intermediateRoutes = await fetchHapagShipRoutesGraph(portCode, endPortCode, formattedArrivalDate);
+                // Process each route to find connections
+                for (const route of routesToProcess) {
+                    // Extract the arrival date from this route
+                    const arrivalDate = route.arrivalTime;
                     
-                    if (intermediateRoutes && !intermediateRoutes.error) {
-                        console.log(`Found ${intermediateRoutes.completeRoutes?.length || 0} routes from ${portCode} to ${endPortCode}`);
+                    if (!arrivalDate) {
+                        console.log(`No arrival date found for route from ${portCode}`);
+                        continue;
+                    }
+                    
+                    // Format the arrival date to YYYY-MM-DD
+                    const formattedArrivalDate = arrivalDate.split('T')[0];
+                    console.log(`Using formatted arrival date ${formattedArrivalDate} for route from ${portCode} to ${endPortCode}`);
+                    
+                    try {
+                        // Fetch routes from this port to the end port using the formatted arrival date
+                        const intermediateRoutes = await fetchHapagShipRoutesGraph(portCode, endPortCode, formattedArrivalDate);
                         
-                        // Add the new routes to the enhanced graph
-                        if (!enhancedGraphCopy[portCode]) {
-                            enhancedGraphCopy[portCode] = [];
-                        }
-                        
-                        // Add each new route to the graph
-                        if (intermediateRoutes.completeRoutes) {
-                            for (const newRoute of intermediateRoutes.completeRoutes) {
-                                // Check if this route already exists in the graph
-                                const routeExists = enhancedGraphCopy[portCode].some(
-                                    existingRoute => 
-                                        existingRoute.shipId === newRoute.voyages[0].shipId && 
-                                        existingRoute.voyage === newRoute.voyages[0].voyage
-                                );
-                                
-                                if (!routeExists) {
-                                    // Add the new route to the graph
-                                    enhancedGraphCopy[portCode].push(newRoute.voyages[0]);
+                        if (intermediateRoutes && !intermediateRoutes.error) {
+                            console.log(`Found ${intermediateRoutes.completeRoutes?.length || 0} routes from ${portCode} to ${endPortCode}`);
+                            
+                            // Add the new routes to the enhanced graph
+                            if (!enhancedGraphCopy[portCode]) {
+                                enhancedGraphCopy[portCode] = [];
+                            }
+                            
+                            // Add each new route to the graph
+                            if (intermediateRoutes.completeRoutes) {
+                                for (const newRoute of intermediateRoutes.completeRoutes) {
+                                    // Check if this route already exists in the graph
+                                    const routeExists = enhancedGraphCopy[portCode].some(
+                                        existingRoute => 
+                                            existingRoute.shipId === newRoute.voyages[0].shipId && 
+                                            existingRoute.voyage === newRoute.voyages[0].voyage
+                                    );
+                                    
+                                    if (!routeExists) {
+                                        // Add the new route to the graph
+                                        enhancedGraphCopy[portCode].push(newRoute.voyages[0]);
+                                    }
                                 }
                             }
                         }
+                    } catch (error) {
+                        console.error(`Error fetching intermediate routes from ${portCode} to ${endPortCode}:`, error);
                     }
-                } catch (error) {
-                    console.error(`Error fetching intermediate routes from ${portCode} to ${endPortCode}:`, error);
                 }
-            }
+            }));
+            
+            // Update the enhanced graph after each batch
+            dataStore.seaRoutesGraph = enhancedGraphCopy;
+            setEnhancedGraph(enhancedGraphCopy);
         }
         
-        // Update the enhanced graph
+        // Final update after all batches are processed
+        dataStore.seaRoutesGraph = enhancedGraphCopy;
         setEnhancedGraph(enhancedGraphCopy);
         console.log("Enhanced graph:", enhancedGraphCopy);
     };
@@ -215,22 +291,58 @@ const ShipRoutesDisplay = ({ startSeaport, endSeaport, dateRange }) => {
             const paths = routes.map(route => route.path);
             console.log("Paths to process:", paths);
             
+            // Get unique paths to avoid duplicate API calls
+            const uniquePaths = [...new Set(paths.map(path => path.join('->')))]
+                .map(pathStr => pathStr.split('->'));
+            console.log(`Processing ${uniquePaths.length} unique paths out of ${paths.length} total paths`);
+            
             // Process each path to find intermediate routes
-            for (const path of paths) {
-                if (path.length >= 3) {
-                    console.log(`Processing path: ${path.join(' -> ')}`);
-                    
-                    // Fetch intermediate routes for this path
-                    const intermediateData = await fetchIntermediateShipRoutes(path, formattedDate);
-                    console.log("Intermediate routes data received:", intermediateData);
-                    
-                    // Store the intermediate routes
-                    setIntermediateRoutes(prev => {
-                        const updated = prev || {};
-                        updated[path.join('->')] = intermediateData;
-                        return updated;
-                    });
-                }
+            const newIntermediateRoutes = {};
+            
+            const batchSize = 2; // Process paths in batches of 2
+            for (let i = 0; i < uniquePaths.length; i += batchSize) {
+                const batch = uniquePaths.slice(i, i + batchSize);
+                console.log(`Processing batch ${i/batchSize + 1} of paths`);
+                
+                // Process each path in this batch in parallel
+                const batchResults = await Promise.all(batch.map(async (path) => {
+                    if (path.length >= 3) {
+                        console.log(`Processing path: ${path.join(' -> ')}`);
+                        
+                        // Fetch intermediate routes for this path
+                        try {
+                            const intermediateData = await fetchIntermediateShipRoutes(path, formattedDate);
+                            console.log("Intermediate routes data received for path", path.join('->'));
+                            return { 
+                                key: path.join('->'),
+                                data: intermediateData 
+                            };
+                        } catch (error) {
+                            console.error(`Error fetching intermediate routes for path ${path.join('->')}:`, error);
+                            return { key: path.join('->'), data: null };
+                        }
+                    }
+                    return null;
+                }));
+                
+                // Add the batch results to the intermediate routes
+                batchResults.forEach(result => {
+                    if (result) {
+                        newIntermediateRoutes[result.key] = result.data;
+                    }
+                });
+                
+                // Update intermediate routes after each batch
+                setIntermediateRoutes(prev => {
+                    const updated = {
+                        ...prev,
+                        ...newIntermediateRoutes
+                    };
+                    // Make the data instantly available in the dataStore
+                    dataStore.intermediateRoutes = updated;
+                    console.log("Intermediate routes updated in dataStore");
+                    return updated;
+                });
             }
         } catch (error) {
             console.error("Error fetching intermediate routes:", error);
@@ -238,50 +350,155 @@ const ShipRoutesDisplay = ({ startSeaport, endSeaport, dateRange }) => {
     };
     
     // Function to calculate routes from starting port to all intermediate ports
+    // and from all intermediate ports to the destination port
     const calculateRoutesToIntermediatePorts = async (graph, startPortCode, endPortCode, formattedDate) => {
-        console.log("Calculating routes from starting port to all intermediate ports...");
+        console.log("Calculating routes between all ports in the graph...");
         
-        // Get all port codes from the graph except the starting port
+        // Get all port codes from the graph except the starting port and end port
         const intermediatePorts = Object.keys(graph).filter(portCode => 
             portCode !== startPortCode && portCode !== endPortCode
         );
         
         console.log(`Found ${intermediatePorts.length} intermediate ports: ${intermediatePorts.join(", ")}`);
         
-        // Create a container for the new routes
-        const startToIntermediateRoutes = {};
+        // Create a container for all the routes
+        const allRoutes = {};
         
-        // For each intermediate port, fetch routes from the starting port
-        for (const portCode of intermediatePorts) {
-            console.log(`Fetching routes from ${startPortCode} to intermediate port ${portCode}`);
+        // Create a copy of the enhanced graph to update
+        const enhancedGraphCopy = { ...enhancedGraph || graph };
+        
+        // 1. FIRST: Calculate routes from starting port to all intermediate ports
+        console.log(`Calculating routes from starting port ${startPortCode} to all intermediate ports`);
+        
+        // Process intermediate ports in batches
+        const batchSize = 2;
+        for (let i = 0; i < intermediatePorts.length; i += batchSize) {
+            const batch = intermediatePorts.slice(i, i + batchSize);
+            console.log(`Processing batch ${i/batchSize + 1} of intermediate ports (start to intermediate): ${batch.join(", ")}`);
             
-            try {
-                const routesData = await fetchHapagShipRoutesGraph(startPortCode, portCode, formattedDate);
+            // For each intermediate port in this batch, fetch routes from the starting port
+            await Promise.all(batch.map(async (portCode) => {
+                console.log(`Fetching routes from ${startPortCode} to intermediate port ${portCode}`);
                 
-                if (routesData && !routesData.error && routesData.completeRoutes && routesData.completeRoutes.length > 0) {
-                    console.log(`Found ${routesData.completeRoutes.length} routes from ${startPortCode} to ${portCode}`);
-                    startToIntermediateRoutes[portCode] = routesData.completeRoutes;
-                } else {
-                    console.log(`No routes found from ${startPortCode} to ${portCode}`);
-                    startToIntermediateRoutes[portCode] = [];
+                try {
+                    const routesData = await fetchHapagShipRoutesGraph(startPortCode, portCode, formattedDate);
+                    
+                    if (routesData && !routesData.error && routesData.completeRoutes && routesData.completeRoutes.length > 0) {
+                        console.log(`Found ${routesData.completeRoutes.length} routes from ${startPortCode} to ${portCode}`);
+                        allRoutes[`${startPortCode}-${portCode}`] = routesData.completeRoutes;
+                        
+                        // Add these routes to the enhanced graph
+                        if (!enhancedGraphCopy[startPortCode]) {
+                            enhancedGraphCopy[startPortCode] = [];
+                        }
+                        
+                        // Add each voyage to the graph
+                        routesData.completeRoutes.forEach(route => {
+                            if (route.voyages && route.voyages.length > 0) {
+                                const voyage = route.voyages[0];
+                                
+                                // Check if this voyage already exists in the graph
+                                const voyageExists = enhancedGraphCopy[startPortCode].some(
+                                    existingVoyage => 
+                                        existingVoyage.shipId === voyage.shipId && 
+                                        existingVoyage.voyage === voyage.voyage
+                                );
+                                
+                                if (!voyageExists) {
+                                    enhancedGraphCopy[startPortCode].push(voyage);
+                                }
+                            }
+                        });
+                    } else {
+                        console.log(`No routes found from ${startPortCode} to ${portCode}`);
+                        allRoutes[`${startPortCode}-${portCode}`] = [];
+                    }
+                } catch (error) {
+                    console.error(`Error fetching routes from ${startPortCode} to ${portCode}:`, error);
+                    allRoutes[`${startPortCode}-${portCode}`] = [];
                 }
-            } catch (error) {
-                console.error(`Error fetching routes from ${startPortCode} to ${portCode}:`, error);
-                startToIntermediateRoutes[portCode] = [];
-            }
+            }));
+            
+            // Update the enhanced graph after each batch
+            setEnhancedGraph(enhancedGraphCopy);
         }
         
-        console.log("All routes from starting port to intermediate ports:", startToIntermediateRoutes);
+        // 2. SECOND: Calculate routes from all intermediate ports to the destination port
+        console.log(`Calculating routes from all intermediate ports to destination port ${endPortCode}`);
         
-        // Store the routes from starting port to intermediate ports
+        for (let i = 0; i < intermediatePorts.length; i += batchSize) {
+            const batch = intermediatePorts.slice(i, i + batchSize);
+            console.log(`Processing batch ${i/batchSize + 1} of intermediate ports (intermediate to end): ${batch.join(", ")}`);
+            
+            // For each intermediate port in this batch, fetch routes to the destination port
+            await Promise.all(batch.map(async (portCode) => {
+                console.log(`Fetching routes from intermediate port ${portCode} to ${endPortCode}`);
+                
+                try {
+                    const routesData = await fetchHapagShipRoutesGraph(portCode, endPortCode, formattedDate);
+                    
+                    if (routesData && !routesData.error && routesData.completeRoutes && routesData.completeRoutes.length > 0) {
+                        console.log(`Found ${routesData.completeRoutes.length} routes from ${portCode} to ${endPortCode}`);
+                        allRoutes[`${portCode}-${endPortCode}`] = routesData.completeRoutes;
+                        
+                        // Add these routes to the enhanced graph
+                        if (!enhancedGraphCopy[portCode]) {
+                            enhancedGraphCopy[portCode] = [];
+                        }
+                        
+                        // Add each voyage to the graph
+                        routesData.completeRoutes.forEach(route => {
+                            if (route.voyages && route.voyages.length > 0) {
+                                const voyage = route.voyages[0];
+                                
+                                // Check if this voyage already exists in the graph
+                                const voyageExists = enhancedGraphCopy[portCode].some(
+                                    existingVoyage => 
+                                        existingVoyage.shipId === voyage.shipId && 
+                                        existingVoyage.voyage === voyage.voyage
+                                );
+                                
+                                if (!voyageExists) {
+                                    enhancedGraphCopy[portCode].push(voyage);
+                                }
+                            }
+                        });
+                    } else {
+                        console.log(`No routes found from ${portCode} to ${endPortCode}`);
+                        allRoutes[`${portCode}-${endPortCode}`] = [];
+                    }
+                } catch (error) {
+                    console.error(`Error fetching routes from ${portCode} to ${endPortCode}:`, error);
+                    allRoutes[`${portCode}-${endPortCode}`] = [];
+                }
+            }));
+            
+            // Update the enhanced graph after each batch
+            setEnhancedGraph(enhancedGraphCopy);
+        }
+        
+        // 3. Update the intermediate routes with all the routes we found
         setIntermediateRoutes(prev => {
             const updated = prev || {};
-            updated["startToIntermediate"] = { 
+            updated["allPortRoutes"] = { 
                 startPort: startPortCode,
-                intermediateRoutes: startToIntermediateRoutes 
+                endPort: endPortCode,
+                intermediateRoutes: allRoutes 
             };
             return updated;
         });
+        
+        console.log("All routes calculated between ports:", Object.keys(allRoutes).length);
+        console.log("Final enhanced graph:", enhancedGraphCopy);
+
+        // Make the data instantly available in the dataStore
+        dataStore.seaRoutesGraph = enhancedGraphCopy;
+
+        // Add a small delay before setting the state to ensure the data is available
+        setTimeout(() => {
+            setEnhancedGraph(enhancedGraphCopy);
+            console.log("Enhanced graph state updated");
+        }, 100);
     };
     
     const formatDate = (dateString) => {
@@ -304,6 +521,42 @@ const ShipRoutesDisplay = ({ startSeaport, endSeaport, dateRange }) => {
             console.error('Error formatting date:', error);
             return dateString; // Return original on error
         }
+    };
+    
+    // Add a debug function to transform intermediate routes to air routes graph
+    const transformAirRoutesGraph = () => {
+        if (intermediateRoutes && Object.keys(intermediateRoutes).length > 0) {
+            console.log("Manually transforming intermediate routes to air routes graph...");
+            const airRoutesGraph = transformIntermediateAirRoutesToGraph(intermediateRoutes);
+            console.log("Air routes graph transformed with", Object.keys(airRoutesGraph).length, "airports");
+            console.log("Air routes graph:", airRoutesGraph);
+            alert(`Air routes graph created with ${Object.keys(airRoutesGraph).length} airports.`);
+        } else {
+            console.log("No intermediate routes data available");
+            alert("No intermediate routes data available to transform.");
+        }
+    };
+    
+    // Add a debug function to log the current state
+    const toggleDebugInfo = () => {
+        setShowDebugInfo(!showDebugInfo);
+        setShowDebugDetails(!showDebugDetails);
+        console.log("=== CURRENT SEA ROUTES GRAPH ===");
+        console.log(enhancedGraph);
+        console.log("=== CURRENT INTERMEDIATE ROUTES ===");
+        console.log(intermediateRoutes);
+        console.log("=== CURRENT AIR ROUTES GRAPH ===");
+        console.log(dataStore.airRoutesGraph);
+        console.log("=== DATA STORE CONTENTS ===");
+        console.log(dataStore);
+        // Make data available globally for debugging
+        window.routesDebugData = {
+            enhancedGraph,
+            intermediateRoutes,
+            airRoutesGraph: dataStore.airRoutesGraph,
+            dataStore
+        };
+        console.log("All data is available at window.routesDebugData");
     };
     
     if (isLoading) {
@@ -386,6 +639,63 @@ const ShipRoutesDisplay = ({ startSeaport, endSeaport, dateRange }) => {
                                 <span className={styles.portCode}>{endPortCode}</span>
                             </div>
                         </div>
+                        
+                        {/* Debug buttons */}
+                        <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '10px' }}>
+                            <button 
+                                className={styles.debugButton} 
+                                onClick={toggleDebugInfo}
+                                style={{ 
+                                    padding: '5px 10px',
+                                    background: '#007bff',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Debug Info
+                            </button>
+                            <button 
+                                className={styles.debugButton} 
+                                onClick={transformAirRoutesGraph}
+                                style={{ 
+                                    padding: '5px 10px',
+                                    background: '#28a745',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Transform Air Routes
+                            </button>
+                        </div>
+                        
+                        {/* Debug information display */}
+                        {showDebugDetails && (
+                            <div style={{ 
+                                position: 'absolute', 
+                                top: '60px', 
+                                right: '10px', 
+                                background: 'rgba(0,0,0,0.8)', 
+                                color: 'white', 
+                                padding: '10px', 
+                                borderRadius: '4px',
+                                maxWidth: '300px',
+                                zIndex: 1000
+                            }}>
+                                <h4 style={{margin: '0 0 10px 0'}}>Data Status</h4>
+                                <div>
+                                    <div><strong>Sea Routes Graph:</strong> {enhancedGraph ? `${Object.keys(enhancedGraph).length} ports` : 'Not loaded'}</div>
+                                    <div><strong>Intermediate Routes:</strong> {intermediateRoutes ? `${Object.keys(intermediateRoutes).length} connections` : 'Not loaded'}</div>
+                                    <div><strong>Air Routes Graph:</strong> {dataStore.airRoutesGraph ? `${Object.keys(dataStore.airRoutesGraph).length} airports` : 'Not generated'}</div>
+                                </div>
+                                <div style={{marginTop: '10px'}}>
+                                    <small>All data available at window.routesDebugData</small>
+                                </div>
+                            </div>
+                        )}
                         
                         {shipRoutes.length > 0 ? (
                             <div className={styles.routesList}>

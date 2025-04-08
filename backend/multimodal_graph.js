@@ -5,6 +5,9 @@ const axios = require('axios');
 // Import the data provider that will use API functions or fallbacks
 const dataProvider = require('./mockDataProvider');
 
+// Import HTTP fetch to make internal API calls
+const fetch = require('node-fetch');
+
 // Use the mock pool from the data provider
 const pool = dataProvider.mockPool;
 
@@ -13,6 +16,10 @@ const portCache = {
   airports: new Map(),
   seaports: new Map()
 };
+
+// API Base URL - get from environment or use default
+// Local server URL for internal calls
+const API_BASE_URL = 'http://localhost:3000';
 
 /**
  * Safely convert a date to ISO string format
@@ -168,6 +175,132 @@ async function getSeaportDetails(portCode) {
   }
   
   return seaport;
+}
+
+/**
+ * Calculate sea emissions between two ports
+ * @param {string} fromPort - Origin port code
+ * @param {string} toPort - Destination port code
+ * @param {string} shippingLine - Shipping line code (default: 'HLCU')
+ * @returns {Promise<number|null>} Emissions in metric tons or null if calculation failed
+ */
+async function calculateSeaEmissions(fromPort, toPort, shippingLine = 'HLCU') {
+  try {
+    console.log(`Calculating sea emissions from ${fromPort} to ${toPort} (${shippingLine})`);
+    
+    const response = await fetch(`${API_BASE_URL}/api/calculator/sea`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fromPort,
+        toPort,
+        shippingLine
+      })
+    });
+    
+    if (!response.ok) {
+      console.error(`Failed to calculate sea emissions: ${response.status} ${response.statusText}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    console.log(`Sea emissions calculated: ${data.emissions} metric tons`);
+    return data.emissions;
+  } catch (error) {
+    console.error('Error calculating sea emissions:', error);
+    return null;
+  }
+}
+
+/**
+ * Calculate air emissions between two airports
+ * @param {string} fromAirport - Origin airport IATA code
+ * @param {string} toAirport - Destination airport IATA code
+ * @param {number} weight - Cargo weight in tons (default: 0.001)
+ * @returns {Promise<number|null>} Emissions in metric tons or null if calculation failed
+ */
+async function calculateAirEmissions(fromAirport, toAirport, weight = 0.001) {
+  try {
+    console.log(`Calculating air emissions from ${fromAirport} to ${toAirport}`);
+    
+    const response = await fetch(`${API_BASE_URL}/api/calculator/air`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fromAirport,
+        toAirport,
+        weight
+      })
+    });
+    
+    if (!response.ok) {
+      console.error(`Failed to calculate air emissions: ${response.status} ${response.statusText}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    console.log(`Air emissions calculated: ${data.emissions} metric tons`);
+    return data.emissions;
+  } catch (error) {
+    console.error('Error calculating air emissions:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch a delay prediction for a transport edge
+ * @returns {Promise<number>} Delay in minutes
+ */
+async function fetchDelayPrediction() {
+  try {
+    // For now, just return a random delay between 5 and 120 minutes
+    const randomDelayMinutes = Math.floor(Math.random() * 115) + 5;
+    return randomDelayMinutes;
+  } catch (error) {
+    console.error('Error fetching delay prediction:', error);
+    return 0; // Default to no delay if there's an error
+  }
+}
+
+/**
+ * Enhances an edge with delay prediction information and cost
+ * @param {Object} edge - The edge to enhance with delay
+ * @returns {Object} Enhanced edge with delay information and cost
+ */
+async function enhanceEdgeWithDelay(edge) {
+  try {
+    // Fetch delay prediction for this edge
+    const delayMinutes = await fetchDelayPrediction();
+    
+    // Generate a random cost based on transportation mode
+    let cost;
+    if (edge.mode === 'air') {
+      cost = Math.floor(Math.random() * 2001) + 1000; // Random between 1000-3000
+    } else if (edge.mode === 'ship' || edge.mode === 'sea') {
+      cost = Math.floor(Math.random() * 1001) + 500; // Random between 500-1500
+    } else {
+      // For road and other modes
+      cost = Math.floor(Math.random() * 201) + 100; // Random between 100-300
+    }
+    
+    // Add delay and cost information to the edge
+    const enhancedEdge = {
+      ...edge,
+      delay: delayMinutes / 60, // Convert minutes to hours for consistency
+      delayMinutes: delayMinutes,
+      predictedDuration: edge.duration + (delayMinutes / 60),
+      predictedArrivalTime: edge.arrivalTime ? 
+        new Date(new Date(edge.arrivalTime).getTime() + delayMinutes * 60 * 1000).toISOString() : 
+        null,
+      cost: cost
+    };
+    
+    console.log(`Added delay of ${delayMinutes} minutes and cost of ${cost} to ${edge.mode} edge: ${edge.source} → ${edge.target}`);
+    return enhancedEdge;
+  } catch (error) {
+    console.error('Error enhancing edge with delay and cost:', error);
+    return edge; // Return original edge if enhancement fails
+  }
 }
 
 /**
@@ -375,6 +508,20 @@ async function buildMultimodalGraph(origin, destination, startDate) {
               const arrivalTime = new Date(stop.eta || stop.etd);
               const durationHours = (arrivalTime - departureTime) / (1000 * 60 * 60);
               
+              // Calculate sea emissions using the API
+              let shipEmissions = null;
+              try {
+                shipEmissions = await calculateSeaEmissions(prevPortCode, stopPortCode);
+              } catch (error) {
+                console.error(`Error calculating sea emissions for ${prevPortCode} to ${stopPortCode}:`, error);
+              }
+              
+              // Use fallback if API fails
+              if (shipEmissions === null) {
+                shipEmissions = shipDistance * 0.04; // 40g CO2 per km for ships (fallback)
+                console.log(`Using fallback sea emissions value: ${shipEmissions} metric tons`);
+              }
+              
               const shipEdge = {
                 id: `ship_${prevPortId}_to_${stopPortId}_${schedule.voyage}`,
                 source: prevPortId,
@@ -384,7 +531,7 @@ async function buildMultimodalGraph(origin, destination, startDate) {
                 shipName: schedule.shipName,
                 distance: shipDistance,
                 duration: durationHours,
-                emissions: shipDistance * 0.04, // 40g CO2 per km for ships
+                emissions: shipEmissions,
                 departureTime: prevPortTime,
                 arrivalTime: stop.eta || stop.etd
               };
@@ -535,15 +682,45 @@ async function buildMultimodalGraph(origin, destination, startDate) {
                       
                       // Add flight to graph
                       const flight = flightSchedules[0];
+                      
+                      // Calculate flight distance
+                      const flightDistance = flight.distance || calculateDistance(
+                        parseFloat(nearbyAirport.latitude_dd), parseFloat(nearbyAirport.longitude_dd),
+                        parseFloat(destAirport.latitude_dd), parseFloat(destAirport.longitude_dd)
+                      );
+                      
+                      // Debug airport IDs before calculation
+                      console.log(`Attempting to calculate air emissions between airports: ${airportId} and ${destAirportId}`);
+                      
+                      // Calculate actual air emissions using API
+                      let airEmissions = null;
+                      try {
+                        airEmissions = await calculateAirEmissions(airportId, destAirportId);
+                        
+                        if (airEmissions !== null) {
+                          console.log(`✅ Successfully calculated air emissions for ${airportId} to ${destAirportId}: ${airEmissions} metric tons`);
+                        } else {
+                          console.error(`❌ Failed to get valid emissions data for ${airportId} to ${destAirportId}, falling back to estimate`);
+                          
+                          airEmissions = flightDistance * 0.00025; // 250g CO2 per km converted to metric tons
+                          console.log(`   Using fallback emissions value: ${airEmissions} metric tons`);
+                        }
+                      } catch (emissionsError) {
+                        console.error(`❌ Error calculating air emissions for ${airportId} to ${destAirportId}:`, emissionsError);
+                        
+                        airEmissions = flightDistance * 0.00025; // 250g CO2 per km converted to metric tons
+                        console.log(`   Using fallback emissions value: ${airEmissions} metric tons`);
+                      }
+                      
                       const flightEdge = {
                         id: `flight_${airportId}_to_${destAirportId}_${flight.flightNo}`,
                         source: airportId,
                         target: destAirportId,
                         mode: 'air',
                         flightNo: flight.flightNo,
-                        distance: flight.distance,
+                        distance: flightDistance,
                         duration: flight.duration,
-                        emissions: flight.distance * 0.25, // 250g CO2 per km for flights
+                        emissions: airEmissions, // Use calculated emissions or fallback
                         departureTime: flight.departureTime,
                         arrivalTime: flight.arrivalTime
                       };
@@ -691,15 +868,44 @@ async function buildMultimodalGraph(origin, destination, startDate) {
         
         // Add each flight to the graph
         for (const flight of flightSchedules) {
+          // Calculate flight distance
+          const flightDistance = flight.distance || calculateDistance(
+            parseFloat(originAirport.latitude_dd), parseFloat(originAirport.longitude_dd),
+            parseFloat(destAirport.latitude_dd), parseFloat(destAirport.longitude_dd)
+          );
+          
+          // Debug airport IDs before calculation
+          console.log(`Attempting to calculate air emissions between airports: ${originAirport.code} and ${destAirport.code}`);
+          
+          // Calculate actual air emissions using API
+          let airEmissions = null;
+          try {
+            airEmissions = await calculateAirEmissions(originAirport.code, destAirport.code);
+            
+            if (airEmissions !== null) {
+              console.log(`✅ Successfully calculated air emissions for ${originAirport.code} to ${destAirport.code}: ${airEmissions} metric tons`);
+            } else {
+              console.error(`❌ Failed to get valid emissions data for ${originAirport.code} to ${destAirport.code}, falling back to estimate`);
+              
+              airEmissions = flightDistance * 0.00025; // 250g CO2 per km converted to metric tons
+              console.log(`   Using fallback emissions value: ${airEmissions} metric tons`);
+            }
+          } catch (emissionsError) {
+            console.error(`❌ Error calculating air emissions for ${originAirport.code} to ${destAirport.code}:`, emissionsError);
+            
+            airEmissions = flightDistance * 0.00025; // 250g CO2 per km converted to metric tons
+            console.log(`   Using fallback emissions value: ${airEmissions} metric tons`);
+          }
+          
           const flightEdge = {
             id: `flight_${originAirportId}_to_${destAirportId}_${flight.flightNo}`,
             source: originAirportId,
             target: destAirportId,
             mode: 'air',
             flightNo: flight.flightNo,
-            distance: flight.distance,
+            distance: flightDistance,
             duration: flight.duration,
-            emissions: flight.distance * 0.25, // 250g CO2 per km for flights
+            emissions: airEmissions, // Use calculated emissions value
             departureTime: flight.departureTime,
             arrivalTime: flight.arrivalTime
           };
@@ -837,6 +1043,18 @@ async function buildMultimodalGraph(origin, destination, startDate) {
   console.log(`- ${graph.journeys.length} journeys`);
   console.log(`- ${graph.legDetails.length} leg details`);
   
+  // Apply delay enhancement to all edges
+  console.log('Enhancing all edges with delay predictions...');
+  const enhancedEdges = [];
+  for (const edge of graph.edges) {
+    const enhancedEdge = await enhanceEdgeWithDelay(edge);
+    enhancedEdges.push(enhancedEdge);
+  }
+  
+  // Replace the original edges with the enhanced ones
+  graph.edges = enhancedEdges;
+  console.log(`Enhanced all ${graph.edges.length} edges with delay predictions`);
+  
   return graph;
 }
 
@@ -888,5 +1106,9 @@ module.exports = {
   getNearestAirports,
   getNearestSeaports,
   getShipSchedules,
-  getFlightSchedules
+  getFlightSchedules,
+  calculateAirEmissions,
+  calculateSeaEmissions,
+  enhanceEdgeWithDelay,
+  fetchDelayPrediction
 }; 

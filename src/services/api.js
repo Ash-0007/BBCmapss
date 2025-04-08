@@ -1,3 +1,4 @@
+import axios from 'axios';
 const API_BASE_URL = 'http://localhost:3000';
 const API_KEY = "93c936a0-a4c7-47bc-a37a-0e6a3712c647";
 
@@ -5,6 +6,7 @@ const API_KEY = "93c936a0-a4c7-47bc-a37a-0e6a3712c647";
 const FREIGHT_API_BASE_URL = 'http://localhost:5000/api';
 
 import Graph from '../utils/graph';
+// import { calculateAirEmissions, getShippingLineEmissions } from '../backend/controller/emissionsCalc';
 
 export const fetchNearest = async (lat, lng) => {
     try {
@@ -1057,7 +1059,7 @@ export async function fetchMultimodalGraph(origin, destination, startDate, optio
                         
                         // Calculate costs and emissions
                         const airCost = flight.cost || airDistance * 1.8; // ~$1.80 per km if not provided
-                        const airEmissions = flight.emissions || airDistance * 0.25; // ~0.25 kg CO2 per km
+                        const airEmissions = 
                         
                         // Add air route to graph
                         graph.edges.push({
@@ -1138,8 +1140,31 @@ export async function fetchMultimodalGraph(origin, destination, startDate, optio
                                 // Sea shipping costs
                                 const seaCost = route.totalCost || seaDistance * 0.25;
                                 
-                                // Sea emissions (0.015 kg CO2 per km per ton, assuming 25 tons)
-                                const seaEmissions = route.totalEmissions || seaDistance * 0.015 * 25;
+                                // Calculate sea emissions using the emissions calculator API
+                                let seaEmissions = null;
+                                try {
+                                    // Make API call to calculate emissions
+                                    const emissionsResponse = await fetch(`${API_BASE_URL}/api/calculator/sea`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            fromPort: origin.code,
+                                            toPort: destination.code,
+                                            shippingLine: 'HLCU'
+                                        })
+                                    });
+                                    
+                                    if (emissionsResponse.ok) {
+                                        const emissionsData = await emissionsResponse.json();
+                                        if (emissionsData.success) {
+                                            seaEmissions = emissionsData.amount;
+                                            console.log(`[MULTIMODAL] Retrieved sea emissions for ${origin.code} → ${destination.code}: ${seaEmissions} metric tons`);
+                                        }
+                                    }
+                                } catch (emissionsError) {
+                                    console.error(`[MULTIMODAL] Failed to calculate sea emissions: ${emissionsError.message}`);
+                                }
+                                
                                 
                                 // Get detailed voyage information for logging
                                 const provider = route.voyages && route.voyages[0] ? 
@@ -1646,11 +1671,14 @@ export async function fetchMultimodalGraph(origin, destination, startDate, optio
                 nodes: path.nodes,
                 segments,
                 duration: totalDuration,
-                cost: totalCost,
+                cost: path.totalCost || totalCost, // Use the pre-calculated cost if available
                 emissions: totalEmissions,
                 distance: totalDistance,
                 departureTime: segments[0]?.departureTime || formattedDate,
-                arrivalTime: segments[segments.length - 1]?.arrivalTime || null
+                arrivalTime: segments[segments.length - 1]?.arrivalTime || null,
+                delay: path.totalDelay || 0,
+                predictedDuration: path.totalPredictedDuration || totalDuration,
+                delayImpact: path.delayImpact || 0
             };
         });
         
@@ -1676,6 +1704,18 @@ export async function fetchMultimodalGraph(origin, destination, startDate, optio
             console.error('Error enhancing graph with intermediate routes:', error);
             // Continue with the original graph if enhancement fails
         }
+
+        // After all edges are added and before returning the final graph, enhance each edge with delay
+        console.log('[MULTIMODAL] Enhancing edges with delay weights');
+        
+        const enhancedEdges = [];
+        for (const edge of graph.edges) {
+          const enhancedEdge = await enhanceEdgeWithDelay(edge);
+          enhancedEdges.push(enhancedEdge);
+        }
+        
+        // Replace the original edges with the enhanced ones
+        graph.edges = enhancedEdges;
 
         return graph;
     } catch (error) {
@@ -1708,13 +1748,17 @@ function generatePaths(graph, sourceId, targetId, maxTransfers) {
         nodeId: sourceId, 
         path: [sourceId], 
         edges: [],
-        transfers: 0 
+        transfers: 0,
+        totalDuration: 0,
+        totalDelay: 0,
+        totalPredictedDuration: 0,
+        totalCost: 0
     }];
     const visited = new Set();
     const paths = [];
     
     while (queue.length > 0) {
-        const { nodeId, path, edges, transfers } = queue.shift();
+        const { nodeId, path, edges, transfers, totalDuration, totalDelay, totalPredictedDuration, totalCost } = queue.shift();
         
         // Skip if we've exceeded the maximum number of transfers
         if (transfers > maxTransfers) {
@@ -1723,7 +1767,15 @@ function generatePaths(graph, sourceId, targetId, maxTransfers) {
         
         // If we reached the target, add the path to the results
         if (nodeId === targetId) {
-            paths.push({ nodes: path, edges });
+            paths.push({ 
+                nodes: path, 
+                edges, 
+                totalDuration,
+                totalDelay,
+                totalPredictedDuration,
+                totalCost,
+                delayImpact: totalDelay > 0 ? (totalDelay / totalDuration) * 100 : 0
+            });
             continue;
         }
         
@@ -1741,6 +1793,17 @@ function generatePaths(graph, sourceId, targetId, maxTransfers) {
             // Determine if this edge causes a transfer
             const newTransfers = transfers + (edges.length > 0 && edges[edges.length - 1].mode !== edge.mode ? 1 : 0);
             
+            // Add the duration, delay, and cost from this edge
+            const edgeDuration = edge.duration || 0;
+            const edgeDelay = edge.delay || 0;
+            const edgePredictedDuration = edge.predictedDuration || edgeDuration;
+            const edgeCost = edge.cost || 0;
+            
+            const newTotalDuration = totalDuration + edgeDuration;
+            const newTotalDelay = totalDelay + edgeDelay;
+            const newTotalPredictedDuration = totalPredictedDuration + edgePredictedDuration;
+            const newTotalCost = totalCost + edgeCost;
+            
             // Create a unique key for this state (node + transfers)
             const stateKey = `${nextNodeId}-${newTransfers}`;
             
@@ -1756,10 +1819,17 @@ function generatePaths(graph, sourceId, targetId, maxTransfers) {
                 nodeId: nextNodeId,
                 path: [...path, nextNodeId],
                 edges: [...edges, edge],
-                transfers: newTransfers
+                transfers: newTransfers,
+                totalDuration: newTotalDuration,
+                totalDelay: newTotalDelay,
+                totalPredictedDuration: newTotalPredictedDuration,
+                totalCost: newTotalCost
             });
         }
     }
+    
+    // Sort paths by predicted duration (including delays)
+    paths.sort((a, b) => a.totalPredictedDuration - b.totalPredictedDuration);
     
     return paths;
 }
@@ -2158,6 +2228,91 @@ export const enhanceMultimodalGraphWithIntermediateRoutes = async (graph, startD
                 
                 console.log(`Found intermediate routes for path ${pathKey}:`, intermediateRoutes);
                 
+                // Process intermediate routes to add emissions data
+                if (intermediateRoutes && intermediateRoutes.intermediateRoutes) {
+                    console.log(`Adding emissions data for intermediate routes in path ${pathKey}`);
+                    
+                    // Process each intermediate point's routes
+                    for (const [intermediatePoint, routes] of Object.entries(intermediateRoutes.intermediateRoutes)) {
+                        console.log(`Processing emissions for intermediate point: ${intermediatePoint}`);
+                        
+                        // Skip if no routes data found
+                        if (!routes || !routes.routeTree || !routes.routeTree.voyages) {
+                            console.log(`No valid routes data for ${intermediatePoint}, skipping emissions calculation`);
+                            continue;
+                        }
+                        
+                        // Calculate emissions for each voyage in the route tree
+                        for (const voyage of routes.routeTree.voyages) {
+                            // Skip if missing essential data
+                            if (!voyage.departurePort || !voyage.arrivalPort) {
+                                console.log(`Missing port data for voyage ${voyage.voyage}, skipping emissions calculation`);
+                                continue;
+                            }
+                            
+                            // Calculate emissions using the emissions calculator API
+                            try {
+                                console.log(`Calculating emissions for ${voyage.departurePort} → ${voyage.arrivalPort}`);
+                                
+                                const emissionsResponse = await fetch(`${API_BASE_URL}/api/calculator/sea`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        fromPort: voyage.departurePort,
+                                        toPort: voyage.arrivalPort,
+                                        shippingLine: 'HLCU'
+                                    })
+                                });
+                                
+                                if (emissionsResponse.ok) {
+                                    const emissionsData = await emissionsResponse.json();
+                                    if (emissionsData.success) {
+                                        voyage.emissions = emissionsData.emissions;
+                                        console.log(`Retrieved sea emissions for ${voyage.departurePort} → ${voyage.arrivalPort}: ${voyage.emissions} metric tons`);
+                                    }
+                                }
+                            } catch (emissionsError) {
+                                console.error(`Failed to calculate emissions for ${voyage.departurePort} → ${voyage.arrivalPort}: ${emissionsError.message}`);
+                            }
+                        }
+                        
+                        // If we have a complete graph with enhanced routes, add emissions to those too
+                        if (intermediateRoutes.completeGraph && intermediateRoutes.completeGraph[intermediatePoint]) {
+                            const routes = intermediateRoutes.completeGraph[intermediatePoint];
+                            
+                            for (const voyage of routes) {
+                                if (!voyage.departurePort || !voyage.arrivalPort) continue;
+                                
+                                try {
+                                    // Skip if already has emissions data
+                                    if (voyage.emissions !== undefined) continue;
+                                    
+                                    console.log(`Calculating emissions for complete graph voyage ${voyage.departurePort} → ${voyage.arrivalPort}`);
+                                    
+                                    const emissionsResponse = await fetch(`${API_BASE_URL}/api/calculator/sea`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            fromPort: voyage.departurePort,
+                                            toPort: voyage.arrivalPort,
+                                            shippingLine: 'HLCU'
+                                        })
+                                    });
+                                    
+                                    if (emissionsResponse.ok) {
+                                        const emissionsData = await emissionsResponse.json();
+                                        if (emissionsData.success) {
+                                            voyage.emissions = emissionsData.amount || emissionsData.emissions;
+                                        }
+                                    }
+                                } catch (error) {
+                                    console.error(`Failed to calculate emissions for complete graph voyage: ${error.message}`);
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 // If we have a complete graph with new routes, update our graph
                 if (intermediateRoutes.completeGraph && 
                     intermediateRoutes.completeGraph.completeRoutes && 
@@ -2481,7 +2636,7 @@ export const buildMultimodalGraph = async () => {
 
       // Add sea route edges
       if (Array.isArray(routes)) { // Ensure routes is an array
-        routes.forEach((route, index) => {
+        for (const route of routes) {
            // Add destination port node if not already added
            if (route.toPort && !multimodalGraph.nodes[route.toPort]) {
               multimodalGraph.nodes[route.toPort] = {
@@ -2495,22 +2650,49 @@ export const buildMultimodalGraph = async () => {
            }
 
            // Ensure route has necessary properties before creating edge
-           if (portCode && route.toPort && route.departureTime && route.arrivalTime) {
+              // Calculate sea emissions using API
+              let emissions = null;
+              try {
+                const response = await fetch(`${API_BASE_URL}/api/calculator/sea`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    fromPort: portCode,
+                    toPort: route.toPort,
+                    shippingLine: 'HLCU' // Default to Hapag-Lloyd
+                  })
+                });
+                
+                if (response.ok) {
+                  const data = await response.json();
+                  console.log(data);
+                  if (data.success) {
+                    emissions = data.emissions;
+                    console.log(`Retrieved sea emissions for ${portCode} → ${route.toPort}: ${emissions} metric tons`);
+                  }
+                } else {
+                  console.warn(`Failed to get sea emissions for ${portCode} to ${route.toPort}: ${response.status} ${response.statusText}`);
+                }
+              } catch (error) {
+                console.warn(`Failed to calculate sea emissions for ${portCode} to ${route.toPort}:`, error);
+              }
+
               const edge = {
-                id: `sea_${portCode}_${route.toPort}_${route.shipId || 'unknown'}_${route.voyage || index}`,
+                id: `sea_${portCode}_${route.toPort}_${route.shipId || 'unknown'}_${route.voyage || 'unknown'}`,
                 from: portCode,
                 to: route.toPort,
                 type: 'sea',
                 // Use existing calculateDuration function (defined elsewhere)
                 weight: calculateDuration(route.departureTime, route.arrivalTime), // Use duration in hours as weight
+                emissions: emissions, // Add emissions data
                 details: route
               };
               multimodalGraph.edges.push(edge);
               multimodalGraph.metadata.seaEdges++;
-           } else {
-               console.warn('Skipping sea edge due to missing data:', { portCode, ...route });
-           }
-        });
+
+        }
       }
     }
 
@@ -2530,7 +2712,7 @@ export const buildMultimodalGraph = async () => {
     }
 
     // Add air route edges from enhancedAirGraph.edges
-    airEdges.forEach(route => {
+    for (const route of airEdges) {
        // Ensure origin/destination airports are in nodes (might be redundant but safe)
        if (route.from && !multimodalGraph.nodes[route.from]) {
           multimodalGraph.nodes[route.from] = { id: route.from, name: route.from, type: 'airport', lat: null, lng: null };
@@ -2543,6 +2725,36 @@ export const buildMultimodalGraph = async () => {
 
        // Ensure route has necessary properties
        if (route.from && route.to && route.departure && route.arrival) {
+          // Calculate air emissions if we have lat/lng data
+          let emissions = null;
+          const fromNode = multimodalGraph.nodes[route.from];
+          const toNode = multimodalGraph.nodes[route.to];
+          
+          try {
+            const response = await fetch(`${API_BASE_URL}/api/calculator/air`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                fromAirport: route.from,
+                toAirport: route.to,
+                weight: 0.001 // Default weight parameter
+              })
+            });
+            
+            if (response.ok) {
+              const data = await response.json();
+              if (data.success) {
+                emissions = data.emissions;
+              }
+            } else {
+              console.warn(`Failed to get air emissions for ${route.from} to ${route.to}: ${response.status} ${response.statusText}`);
+            }
+          } catch (error) {
+            console.warn(`Failed to calculate air emissions for ${route.from} to ${route.to}:`, error);
+          }
+
           const edge = {
             id: `air_${route.id || `${route.from}_${route.to}`}`,
             from: route.from,
@@ -2550,6 +2762,7 @@ export const buildMultimodalGraph = async () => {
             type: 'air',
             // Use existing calculateFlightDuration function (defined elsewhere, might be same as calculateDuration)
             weight: calculateFlightDuration(route.departure, route.arrival), // Use duration in hours
+            emissions: emissions, // Add emissions data
             details: route
           };
           multimodalGraph.edges.push(edge);
@@ -2557,7 +2770,7 @@ export const buildMultimodalGraph = async () => {
        } else {
           console.warn('Skipping air edge due to missing data:', route);
        }
-    });
+    }
 
     // 3. Add Transfer Edges (Sea <-> Air)
     console.log('Adding transfer edges between nearby seaports and airports...');
@@ -2589,12 +2802,41 @@ export const buildMultimodalGraph = async () => {
                   const distance = airportInfo.distance; // Assuming distance is in km from getNearestAirports
                   const transferTimeHours = (distance / 60) + 1; // Estimate: 60 km/h avg speed + 1 hour buffer
 
+                  // Calculate emissions for transfer using API
+                  let transferEmissions = null;
+                  try {
+                    const response = await fetch(`${API_BASE_URL}/api/emissions/transfer`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({
+                        distance,
+                        mode: 'road'
+                      })
+                    });
+                    
+                    if (response.ok) {
+                      const data = await response.json();
+                      if (data.success) {
+                        transferEmissions = data.emissions;
+                      }
+                    } else {
+                      console.warn(`Failed to get transfer emissions: ${response.status} ${response.statusText}`);
+                    }
+                  } catch (error) {
+                    console.warn(`Failed to calculate transfer emissions for ${seaport.id} to ${airportNode.id}:`, error);
+                    // Fallback to simple calculation if API fails
+                    transferEmissions = distance * 0.2; // Average car emits about 0.2 kg CO2 per km
+                  }
+
                   const transferEdge = {
                     id: `transfer_${seaport.id}_${airportNode.id}`,
                     from: seaport.id,
                     to: airportNode.id,
                     type: 'transfer',
                     weight: transferTimeHours,
+                    emissions: transferEmissions, // Add emissions data
                     details: { distance_km: distance, mode: 'road' }
                   };
                   // Add bi-directional transfer edge
@@ -2632,6 +2874,18 @@ export const buildMultimodalGraph = async () => {
     // Store the built graph globally if needed
     dataStore.multimodalGraph = multimodalGraph;
     window.multimodalGraph = multimodalGraph; // For debugging
+
+    // Apply delay enhancement to all edges
+    console.log('Enhancing all edges with delay predictions...');
+    const enhancedEdges = [];
+    for (const edge of multimodalGraph.edges) {
+      const enhancedEdge = await enhanceEdgeWithDelay(edge);
+      enhancedEdges.push(enhancedEdge);
+    }
+    
+    // Replace the original edges with the enhanced ones
+    multimodalGraph.edges = enhancedEdges;
+    console.log(`Enhanced all ${multimodalGraph.edges.length} edges with delay predictions`);
 
   } catch (error) {
     console.error('Error building multimodal graph:', error);
@@ -2930,3 +3184,60 @@ export const getNearestPorts = async (lat, lng, limit = 3) => {
     return [];
   }
 };
+
+
+/**
+ * Fetch delay prediction from the API
+ * @returns {Promise<number>} Predicted delay in minutes
+ */
+async function fetchDelayPrediction() {
+  try {
+    // For now, just return a random delay between 5 and 120 minutes
+    const randomDelayMinutes = Math.floor(Math.random() * 115) + 5;
+    return randomDelayMinutes;
+  } catch (error) {
+    console.error('[MULTIMODAL] Error fetching delay prediction:', error);
+    return 0; // Default to no delay if there's an error
+  }
+}
+
+/**
+ * Enhances an edge with delay prediction information and cost
+ * @param {Object} edge - The edge to enhance with delay
+ * @returns {Object} Enhanced edge with delay information and cost
+ */
+export async function enhanceEdgeWithDelay(edge) {
+  try {
+    // Fetch delay prediction for this edge
+    const delayMinutes = await fetchDelayPrediction();
+    
+    // Generate a random cost based on transportation mode
+    let cost;
+    if (edge.mode === 'air') {
+      cost = Math.floor(Math.random() * 2001) + 1000; // Random between 1000-3000
+    } else if (edge.mode === 'ship' || edge.mode === 'sea') {
+      cost = Math.floor(Math.random() * 1001) + 500; // Random between 500-1500
+    } else {
+      // For road and other modes
+      cost = Math.floor(Math.random() * 201) + 100; // Random between 100-300
+    }
+    
+    // Add delay and cost information to the edge
+    const enhancedEdge = {
+      ...edge,
+      delay: delayMinutes / 60, // Convert minutes to hours for consistency
+      delayMinutes: delayMinutes,
+      predictedDuration: edge.duration + (delayMinutes / 60),
+      predictedArrivalTime: edge.arrivalTime ? 
+        new Date(new Date(edge.arrivalTime).getTime() + delayMinutes * 60 * 1000).toISOString() : 
+        null,
+      cost: cost
+    };
+    
+    console.log(`[MULTIMODAL] Added delay of ${delayMinutes} minutes and cost of ${cost} to ${edge.mode} edge: ${edge.source} → ${edge.target}`);
+    return enhancedEdge;
+  } catch (error) {
+    console.error('[MULTIMODAL] Error enhancing edge with delay and cost:', error);
+    return edge; // Return original edge if enhancement fails
+  }
+}

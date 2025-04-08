@@ -10,6 +10,8 @@ const mscRouteRoutes = require('./routes/mscRouteRoutes');
 const hapagLloydRoutes = require('./routes/hapagLloydRoutes');
 const multimodalRoutes = require('./routes/multimodalRoutes');
 const routesDataStoreRoutes = require('./routes/routesDataStoreRoutes');
+const emissionsRoutes = require('./routes/emissionsRoutes');
+const calculatorEndpoints = require('./routes/calculatorEndpoints');
 const CathayCargo = require('./CathayCargoApiExtractor');
 
 // Import database connection
@@ -49,6 +51,8 @@ app.use('/api', mscRouteRoutes);
 app.use('/api', hapagLloydRoutes);
 app.use('/api', multimodalRoutes);
 app.use('/api/routes-data', routesDataStoreRoutes);
+app.use('/api', emissionsRoutes);
+app.use('/api/calculator', calculatorEndpoints);
 
 // Add error handler middleware
 app.use((err, req, res, next) => {
